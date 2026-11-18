@@ -335,6 +335,11 @@ pub struct ExportResult {
     /// layout to validate. Optional on the wire so older frontends keep working.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub report: Option<crate::validate::ExportReport>,
+    /// Strict "what an ATS sees" reading of the exported résumé (PDF/DOCX). Advisory:
+    /// never affects whether the export succeeds. `None` for TXT and cover letters.
+    /// Optional on the wire so older frontends keep working.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ats_view: Option<crate::validate::AtsView>,
 }
 
 /// Live-preview result: per-page rendered images (no file bytes, no filename).

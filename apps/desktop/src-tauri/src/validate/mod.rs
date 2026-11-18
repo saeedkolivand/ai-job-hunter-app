@@ -21,11 +21,17 @@ use crate::error::{AppError, AppResult};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use crate::export::types::{ExportFormat, ExportRequest};
+use crate::export::types::{DocumentType, ExportFormat, ExportRequest};
 
+mod ats_view;
 mod header_links;
 mod pdf_links;
 mod readback;
+
+pub use self::ats_view::{
+    ats_view_for_file, ats_view_from_text, AtsContact, AtsField, AtsHints, AtsReason, AtsRole,
+    AtsSection, AtsSectionKind, AtsStatus, AtsSummary, AtsView,
+};
 
 use self::header_links::pdf_render_issues;
 use self::readback::{evaluate, expected_from_request, stray_markdown_issues};
@@ -84,6 +90,11 @@ pub struct ExportReport {
     pub issues: Vec<ExportIssue>,
     /// Human-readable description of each auto-fix that was applied.
     pub fixed: Vec<String>,
+    /// The strict "what an ATS sees" reading of the returned bytes (resumes only).
+    /// A by-product of the round-trip extraction; the export command moves it onto
+    /// `ExportResult::ats_view`, so it never travels inside the report on the wire.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ats_view: Option<AtsView>,
 }
 
 fn has_critical(issues: &[ExportIssue]) -> bool {
@@ -110,11 +121,12 @@ pub fn validate_and_fix(
                 ats_mode: request.ats_mode,
                 issues: vec![],
                 fixed: vec![],
+                ats_view: None,
             },
         ));
     }
 
-    let mut issues = run_validators(&request, &bytes);
+    let (mut issues, mut ats_view) = run_validators(&request, &bytes);
     let mut fixed = Vec::new();
 
     // Auto-fix: a two-column layout whose sections interleave when read back is
@@ -135,7 +147,7 @@ pub fn validate_and_fix(
         );
         request.ats_mode = true;
         bytes = generate(&request)?;
-        issues = run_validators(&request, &bytes);
+        (issues, ats_view) = run_validators(&request, &bytes);
         fixed.push(
             "Re-exported in ATS-safe single-column layout because the two-column \
              layout's sections interleaved when read back."
@@ -151,15 +163,16 @@ pub fn validate_and_fix(
             ats_mode: request.ats_mode,
             issues,
             fixed,
+            ats_view,
         },
     ))
 }
 
-fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
+fn run_validators(request: &ExportRequest, bytes: &[u8]) -> (Vec<ExportIssue>, Option<AtsView>) {
     let extracted = match request.format {
         ExportFormat::Pdf => extract_pdf_text(bytes),
         ExportFormat::Docx => extract_docx_text(bytes),
-        ExportFormat::Txt => return Vec::new(),
+        ExportFormat::Txt => return (Vec::new(), None),
     };
 
     let extracted = match extracted {
@@ -179,10 +192,13 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
                  export proceeded unchecked",
                 request.format
             );
-            return vec![ExportIssue::warning(
-                "roundtrip_unavailable",
-                "Could not re-read the exported file to verify it; export proceeded unchecked.",
-            )];
+            return (
+                vec![ExportIssue::warning(
+                    "roundtrip_unavailable",
+                    "Could not re-read the exported file to verify it; export proceeded unchecked.",
+                )],
+                None,
+            );
         }
     };
 
@@ -198,7 +214,16 @@ fn run_validators(request: &ExportRequest, bytes: &[u8]) -> Vec<ExportIssue> {
     if matches!(request.format, ExportFormat::Pdf) {
         issues.extend(pdf_render_issues(request, bytes));
     }
-    issues
+    // Advisory ATS view from the SAME extracted text (no second pass); résumés only.
+    let ats_view = matches!(request.document_type, DocumentType::Resume).then(|| {
+        ats_view_from_text(
+            &extracted,
+            AtsHints {
+                name: expected.name.as_deref(),
+            },
+        )
+    });
+    (issues, ats_view)
 }
 
 fn extract_pdf_text(bytes: &[u8]) -> AppResult<String> {
@@ -206,31 +231,57 @@ fn extract_pdf_text(bytes: &[u8]) -> AppResult<String> {
         .map_err(|e| AppError::Parse(format!("pdf extract: {e}")))
 }
 
+/// Largest uncompressed `word/document.xml` the readback will inflate. Generated
+/// résumés are well under 1 MB; this only bounds a hostile user-chosen file.
+const MAX_DOCX_XML_BYTES: u64 = 20 * 1024 * 1024;
+
 fn extract_docx_text(bytes: &[u8]) -> AppResult<String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| AppError::Parse(format!("docx open: {e}")))?;
-    let mut xml = String::new();
-    zip.by_name("word/document.xml")
-        .map_err(|e| AppError::Parse(format!("docx read entry: {e}")))?
-        .read_to_string(&mut xml)
+    let entry = zip
+        .by_name("word/document.xml")
+        .map_err(|e| AppError::Parse(format!("docx read entry: {e}")))?;
+    // The declared size is attacker-controlled, so check it AND bound the read itself:
+    // a few KB of zip can inflate to gigabytes (decompression bomb).
+    if entry.size() > MAX_DOCX_XML_BYTES {
+        return Err(AppError::Parse("docx read xml: entry too large".into()));
+    }
+    let mut buf = Vec::new();
+    entry
+        .take(MAX_DOCX_XML_BYTES + 1)
+        .read_to_end(&mut buf)
         .map_err(|e| AppError::Parse(format!("docx read xml: {e}")))?;
+    if buf.len() as u64 > MAX_DOCX_XML_BYTES {
+        return Err(AppError::Parse("docx read xml: entry too large".into()));
+    }
+    let xml = String::from_utf8(buf).map_err(|e| AppError::Parse(format!("docx read xml: {e}")))?;
     Ok(strip_xml_tags(&xml))
 }
 
-/// Strip XML tags, replacing each with a space so adjacent runs don't fuse, then
-/// decode the handful of entities docx-rs emits.
+/// Strip XML tags, replacing each with a space so adjacent runs don't fuse (and
+/// each closing paragraph with a newline), then decode the handful of entities
+/// docx-rs emits.
 fn strip_xml_tags(xml: &str) -> String {
     let mut out = String::with_capacity(xml.len());
+    let mut tag = String::new();
     let mut in_tag = false;
     for c in xml.chars() {
         match c {
             '<' => {
                 in_tag = true;
+                tag.clear();
                 out.push(' ');
             }
-            '>' => in_tag = false,
+            '>' => {
+                in_tag = false;
+                // A paragraph / line break keeps its line boundary for the ATS view;
+                // every other consumer collapses whitespace, so this is invisible to them.
+                if tag == "/w:p" || tag.starts_with("w:br") {
+                    out.push('\n');
+                }
+            }
             _ if !in_tag => out.push(c),
-            _ => {}
+            _ => tag.push(c),
         }
     }
     out.replace("&amp;", "&")

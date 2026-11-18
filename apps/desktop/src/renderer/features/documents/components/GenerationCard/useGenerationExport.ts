@@ -4,6 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import type { ExportFormat } from '@/components/generation/ExportPicker';
+import { useResumeExportPath } from '@/hooks/use-resume-export-path';
 import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
@@ -31,6 +32,8 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
   // Per-export document accent (6-hex) — undefined = the template's own palette.
   const [accent, setAccent] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
+  // Where the last PDF/DOCX résumé export was saved — feeds the "what an ATS sees" panel.
+  const { path: resumeExportPath, track } = useResumeExportPath();
 
   const doExport = async (type: 'resume' | 'cover') => {
     const text = type === 'resume' ? resumeDraft : coverDraft;
@@ -53,11 +56,14 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
         : undefined;
     setExporting(type);
     try {
-      if (format === 'txt') {
-        exportTXT(text, filename.replace('.txt', ''));
-      } else {
+      // Résumés only feed the ATS panel (a newer résumé export supersedes an older one).
+      await track(type === 'resume', async () => {
+        if (format === 'txt') {
+          exportTXT(text, filename.replace('.txt', ''));
+          return;
+        }
         const exporter = format === 'pdf' ? exportPDF : exportDOCX;
-        await exporter(
+        return exporter(
           text,
           filename.replace(`.${format}`, ''),
           docType,
@@ -67,7 +73,7 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
           coverLetterLocale,
           accent
         );
-      }
+      });
     } catch (err) {
       console.error('[export] failed', {
         format,
@@ -83,5 +89,15 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
     }
   };
 
-  return { format, setFormat, template, setTemplate, accent, setAccent, exporting, doExport };
+  return {
+    format,
+    setFormat,
+    template,
+    setTemplate,
+    accent,
+    setAccent,
+    exporting,
+    doExport,
+    resumeExportPath,
+  };
 }

@@ -160,7 +160,8 @@ pub(super) const BRIDGE_AND_EMAIL_WATCH: &[PolicyEntry] = &[
         }),
     },
     // export/commands/mod.rs
-    // Verified: renders and returns bytes only — no filesystem write.
+    // Verified: renders and returns the bytes plus the advisory `atsView` derived from
+    // them (a pure, bounded reading of the caller's own request text) — no filesystem write.
     PolicyEntry {
         path: "export::commands::documents_export_document",
         effect: Effect::Read,
@@ -176,6 +177,22 @@ pub(super) const BRIDGE_AND_EMAIL_WATCH: &[PolicyEntry] = &[
     PolicyEntry {
         path: "export::commands::documents_render_preview_images",
         effect: Effect::Read,
+    },
+    // Security review (F2), the `commands::resume::extract_resume` precedent: the
+    // command reads a fully caller-controlled path. The in-app guard (extension,
+    // `..`, UNC/device prefixes, size caps) is written for a path the user picked
+    // in a file dialog; dispatched by name it would be an arbitrary local
+    // .pdf/.docx read into an LLM's context, and a UNC path would force an
+    // outbound SMB/WebDAV connection on Windows. Agents get the same view on the
+    // `atsView` of the export result of documents they render themselves.
+    PolicyEntry {
+        path: "export::commands::export_ats_view",
+        effect: Effect::NotExposed(
+            "reads a fully caller-controlled filesystem path — an arbitrary local .pdf/.docx \
+             read into the caller's context, and a UNC path forces an outbound SMB/WebDAV \
+             connection on Windows; agents get the view through the atsView of the export \
+             result of documents they render themselves",
+        ),
     },
     // updater/mod.rs
     // A network probe of the release feed (`updater.check().await`). It

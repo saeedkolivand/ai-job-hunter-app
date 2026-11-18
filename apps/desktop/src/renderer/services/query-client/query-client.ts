@@ -120,6 +120,7 @@ export const keys = {
     bestMatches: ['autopilot', 'bestMatches'] as const,
   },
   aiGenerations: { all: ['aiGenerations'] as const },
+  export: { atsView: (path: string) => ['export', 'atsView', path] as const },
   referrals: {
     all: ['referrals'] as const,
     list: (jobUrl?: string) => ['referrals', jobUrl ?? null] as const,

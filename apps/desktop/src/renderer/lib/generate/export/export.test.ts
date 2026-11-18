@@ -108,6 +108,17 @@ describe('exportDOCX / exportPDF', () => {
     expect(arg.accent).toBeUndefined();
   });
 
+  it.each([
+    ['pdf', exportPDF],
+    ['docx', exportDOCX],
+  ] as const)('resolves the %s export to the saved path', async (_format, exporter) => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+    const saved = await exporter('Resume body', 'out', 'resume', meta, 'classic');
+    expect(saved).toBe('/path/out');
+  });
+
   it('threads the letter layout into the cover-letter export request', async () => {
     const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
     _registerClient(createMockClient({ documents: { exportAndSave } }));

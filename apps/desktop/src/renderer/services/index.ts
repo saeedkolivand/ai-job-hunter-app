@@ -18,6 +18,7 @@ export * from './use-ai-provider';
 export * from './use-ai-search-settings';
 export * from './use-ai-stage-overrides';
 export * from './use-applications';
+export * from './use-ats-view';
 export * from './use-auto-index/use-auto-index';
 export * from './use-autopilot';
 export * from './use-boards';

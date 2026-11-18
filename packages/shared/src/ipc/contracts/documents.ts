@@ -1,6 +1,7 @@
 import type { DocumentImportRequest } from '../../schemas/index.js';
 import type { DocumentRecord } from '../../types/index.js';
 import type { ContactProfile } from './contactProfile.js';
+import type { AtsView } from './export.js';
 
 export type TemplateId =
   | 'classic'
@@ -275,10 +276,16 @@ export interface DocumentsContract {
 
   setDefault(id: string): Promise<void>;
 
-  exportDocument(
-    req: BaseExportRequest
-  ): Promise<{ data: number[]; mimeType: string; filename: string; report?: ExportReport }>;
+  exportDocument(req: BaseExportRequest): Promise<{
+    data: number[];
+    mimeType: string;
+    filename: string;
+    report?: ExportReport;
+    /** Strict "what an ATS sees" reading of the exported résumé (PDF/DOCX); absent for TXT and cover letters. Advisory. */
+    atsView?: AtsView;
+  }>;
 
+  /** Render, ask the user where to save, and write the file; resolves to the saved path. */
   exportAndSave(req: BaseExportRequest): Promise<string>;
 
   /**

@@ -8,3 +8,7 @@ Domain glossary. Terms and one-line meanings only; behaviour lives in the code a
 - **Open long**: The posting has been seen for a long time, measured from the first time we saw it.
 - **Repost**: A posting that disappeared from a source that could have shown it, then came back there.
 - **Source**: One board plus one search; the unit a repost is judged against.
+
+## Export
+
+- **ATS view**: What an applicant-tracking system extracts from an exported résumé, judged per field as found, missing or suspicious. Advisory only.

@@ -216,6 +216,7 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         export::commands::documents_export_document,
         export::commands::documents_export_and_save,
         export::commands::documents_render_preview_images,
+        export::commands::export_ats_view,
         // updater
         updater::updater_status,
         updater::updater_check,

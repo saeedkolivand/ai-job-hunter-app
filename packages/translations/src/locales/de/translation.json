@@ -2352,6 +2352,52 @@
       "found": "Gefunden"
     }
   },
+  "atsView": {
+    "title": "Das sieht ein ATS: {{found}} von {{total}} Feldern gefunden",
+    "hint": "Eine strenge, automatische Lesung Ihrer exportierten Datei. Nur ein Hinweis, echte Systeme unterscheiden sich.",
+    "present": "heute",
+    "status": {
+      "found": "Gefunden",
+      "suspicious": "Unklar",
+      "missing": "Fehlt"
+    },
+    "groups": {
+      "contact": "Kontakt und Layout",
+      "sections": "Abschnittsüberschriften",
+      "role": "Station {{n}}"
+    },
+    "contact": {
+      "name": "Name",
+      "email": "E-Mail",
+      "phone": "Telefon",
+      "location": "Ort"
+    },
+    "readingOrder": "Lesereihenfolge",
+    "readingOrderOk": "In Reihenfolge",
+    "readingOrderUnchecked": "Es wurde keine übliche Abschnittsüberschrift gefunden, daher ließ sich die Lesereihenfolge nicht prüfen.",
+    "section": {
+      "summary": "Zusammenfassung",
+      "experience": "Berufserfahrung",
+      "education": "Ausbildung",
+      "projects": "Projekte",
+      "skills": "Kenntnisse",
+      "other": "Sonstige Überschrift"
+    },
+    "role": {
+      "title": "Jobtitel",
+      "company": "Unternehmen",
+      "start": "Beginn",
+      "end": "Ende"
+    },
+    "reason": {
+      "notFound": "Im Text wurde nichts Passendes gefunden.",
+      "unparseable": "Das Datum liegt in einem Format vor, das ein ATS möglicherweise nicht liest. Monat und vollständiges Jahr funktionieren am besten.",
+      "datesInverted": "Das Enddatum liegt vor dem Startdatum.",
+      "wrapped": "Die Telefonnummer wurde auf zwei Zeilen verteilt.",
+      "nonstandardHeading": "Diese Überschrift erkennt ein ATS üblicherweise nicht. Gängige Namen wie Berufserfahrung oder Ausbildung sind sicherer.",
+      "interleaved": "Inhalt wurde vor dem Kopfbereich gelesen, was bei zweispaltigen Layouts passieren kann."
+    }
+  },
   "bestMatches": {
     "title": "Beste Treffer",
     "subtitle": "Die bestbewerteten Jobs über alle Autopiloten hinweg, an einem Ort.",

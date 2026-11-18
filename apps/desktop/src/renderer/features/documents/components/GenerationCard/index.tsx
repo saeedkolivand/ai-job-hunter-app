@@ -14,6 +14,7 @@ import type { AiGenerationRecord } from '@ajh/shared/ipc';
 import { useTranslation } from '@ajh/translations';
 import { ActionMenu, Button, ConfirmModal, transition } from '@ajh/ui';
 
+import { AtsViewPanel } from '@/components/generation/AtsViewPanel';
 import { EditableOutput } from '@/components/generation/EditableOutput';
 import { ExportActionIcon, ExportPicker } from '@/components/generation/ExportPicker';
 import { type TemplateId, TEMPLATES } from '@/lib/generate';
@@ -277,6 +278,7 @@ export function GenerationCard({ gen, selected = false, onToggleSelect }: Genera
         templateOptions={TEMPLATE_OPTIONS}
         accent={exportState.accent}
         onAccentChange={exportState.setAccent}
+        footer={<AtsViewPanel path={exportState.resumeExportPath} />}
       >
         {resumeDraft && (
           <Button

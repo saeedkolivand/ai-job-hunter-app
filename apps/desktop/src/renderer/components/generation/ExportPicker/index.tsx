@@ -37,6 +37,8 @@ interface BaseProps {
   onAccentChange?: (accent: string | undefined) => void;
   /** z-index for the modal — forwarded to ModalShell (default 600). */
   zIndex?: number;
+  /** Composed mode only: extra content under the action buttons (e.g. the ATS view panel). */
+  footer?: ReactNode;
 }
 
 /**
@@ -84,6 +86,7 @@ export function ExportPicker(props: ExportPickerProps) {
     accent,
     onAccentChange,
     zIndex,
+    footer,
   } = props;
   const { t } = useTranslation();
 
@@ -165,6 +168,7 @@ export function ExportPicker(props: ExportPickerProps) {
             </div>
             {showAccentPicker && <AccentPicker value={accent} onChange={onAccentChange} />}
             <div className="flex flex-wrap items-center gap-2">{props.children}</div>
+            {footer}
           </>
         )}
       </div>

@@ -1,6 +1,6 @@
 # Resume domain (resume + ATS + export)
 
-Last updated: 2026-10-05
+Last updated: 2026-11-18
 
 Merged knowledge for `resume-export-expert`, `pdf-docx-generator` (impl), and `job-match-expert` (ATS scoring). Canonical: [`docs/EXPORT_TEMPLATES.md`](../EXPORT_TEMPLATES.md). Source is authoritative for literals (template count, scoring weights).
 
@@ -45,6 +45,10 @@ Two **tiers** — `TemplateTier { Ats, Design }` (`export/templates/mod.rs`), me
    - `keywords_normalized()` — tokenizes, lowercases, applies synonym-normalization (the alias table lives beside it in `documents/keywords.rs`), then drops short tokens unless they are in the `SHORT_TECH_TERMS` allowlist and drops stopwords. The length bar and the allowlist members are both on that const; read them there, since a copied allowlist is a silent lie the day one is added. **No stemming.** Synonym lookup runs on raw tokens (before trimming) so a punctuated spelling still resolves to its alias. Cached per-document in the `keywords_json` column.
    - `apply_stemmer()` — Snowball stemming for whichever language `whatlang` detects at match time (fallback English; the supported set is the stemmer match in `keywords.rs`). Stemming skipped for `SHORT_TECH_TERMS` to prevent corruption (aws → aw).
    - `keyword_coverage()` returns resume vs job keyword overlap %; a **weighted blend of semantic similarity + keyword coverage** (read source for exact ratio — never trust a copied number). Corrupt/absent cache → `parse_resume_keywords` returns None → live extraction fallback from resume.text (never an empty set / zero score). Scoring is on-demand per opened job via MatchScoresProvider + useJobMatchScore (React Query; the cache lifetime is that hook's own `staleTime`) — the old batch/FIFO auto-scorer is gone. Gaps → recommendations (`recommend/`). Cover letters: `cover_letter/`.
+
+## ATS view (advisory)
+
+The "what an ATS sees" reading is computed from the text the validate round-trip already re-extracts on every PDF/DOCX résumé export; it never blocks an export. Owner: `validate::ats_view` (module doc); shape: `AtsView` TSDoc in `packages/shared/src/ipc/contracts/export.ts`. `export_ats_view` re-reads a previously exported local file and is policy `NotExposed` for agents; agents get the view on the export result.
 
 ## Export contract & pipeline
 

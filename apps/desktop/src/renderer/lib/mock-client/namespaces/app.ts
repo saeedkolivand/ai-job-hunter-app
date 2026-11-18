@@ -14,7 +14,23 @@ export const appNamespaces = (): Pick<
   | 'menu'
   | 'notifications'
   | 'dialog'
+  | 'export'
 > => ({
+  export: {
+    atsView: async () => ({
+      contact: {
+        name: { status: 'missing', reason: 'notFound' },
+        email: { status: 'missing', reason: 'notFound' },
+        phone: { status: 'missing', reason: 'notFound' },
+        location: { status: 'missing', reason: 'notFound' },
+      },
+      sections: [],
+      roles: [],
+      readingOrder: { status: 'found' },
+      summary: { found: 1, suspicious: 0, missing: 4, total: 5 },
+    }),
+  },
+
   updater: {
     check: noop,
     download: noop,

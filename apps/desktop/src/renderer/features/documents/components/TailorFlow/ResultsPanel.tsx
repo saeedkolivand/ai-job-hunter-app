@@ -13,6 +13,7 @@ import { stoppedSuffix } from '@/lib/stopped-reason';
 import { GenerationOutput } from './GenerationOutput';
 import { PIPELINE_STEP_KEYS } from './lib/pipeline-steps';
 import type { TailorTarget } from './lib/tailor-target';
+import { NeedsReviewNotice } from './NeedsReviewNotice';
 
 /** How a TERMINAL staged run ended — the only states this panel ever shows
  *  (a busy session renders `GeneratingPanel` instead). */
@@ -107,6 +108,8 @@ interface Props {
   exportOpen: boolean;
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>;
   onExport: (fmt: 'pdf' | 'docx' | 'txt') => void;
+  /** Where the last PDF/DOCX résumé export was saved — feeds the ATS view panel. */
+  atsViewPath?: string | null;
   /** How the run this document came from ended — drives the status banner. */
   runState: TailorRunState;
   /** True for a COLD redisplay (no run started/reconnected THIS session) —
@@ -166,6 +169,7 @@ export function ResultsPanel({
   exportOpen,
   setExportOpen,
   onExport,
+  atsViewPath,
   runState,
   cold = false,
   error,
@@ -206,41 +210,7 @@ export function ResultsPanel({
               </span>
             )}
           </div>
-          {runState === 'needsReview' && (
-            <div
-              role="status"
-              className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2.5"
-            >
-              {openClaims > 0 ? (
-                <>
-                  <p className="text-[11px] font-medium text-amber-400">
-                    {t('autopilot.apply.wizard.results.needsReviewTitle', { count: openClaims })}
-                  </p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-foreground/50">
-                    {t(
-                      cold
-                        ? 'autopilot.apply.wizard.results.needsReviewHintCold'
-                        : 'autopilot.apply.wizard.results.needsReviewHint'
-                    )}
-                  </p>
-                </>
-              ) : (
-                // The report can flag `needsReview` on a critical with NO
-                // fabrication entry (Rust `slot_has_unresolvable_critical`) —
-                // "0 claims need your verdict" then points at an empty list.
-                // Say what's actually true and point at the quality badge
-                // instead of a per-claim count that doesn't exist.
-                <>
-                  <p className="text-[11px] font-medium text-amber-400">
-                    {t('autopilot.apply.wizard.results.needsReviewTitleEmpty')}
-                  </p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-foreground/50">
-                    {t('autopilot.apply.wizard.results.needsReviewHintEmpty')}
-                  </p>
-                </>
-              )}
-            </div>
-          )}
+          {runState === 'needsReview' && <NeedsReviewNotice openClaims={openClaims} cold={cold} />}
           {runState === 'cancelled' && (
             <p className="text-[11px] leading-relaxed text-foreground/50">
               {t('autopilot.apply.wizard.results.cancelledHint')}
@@ -313,6 +283,7 @@ export function ResultsPanel({
           exportOpen={exportOpen}
           setExportOpen={setExportOpen}
           onExport={onExport}
+          atsViewPath={atsViewPath}
           jobDesc={jobDesc}
           onJobDescChange={onJobDescChange}
           hasDesc={hasDesc}

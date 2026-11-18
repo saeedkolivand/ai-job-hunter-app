@@ -24,6 +24,7 @@ describe('IPC_CHANNELS', () => {
         'dialog',
         'discovery',
         'documents',
+        'export',
         'emailWatch',
         'extensionBridge',
         'geocode',
