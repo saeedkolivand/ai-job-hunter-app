@@ -87,6 +87,21 @@ fn success_or_capped_reply_refuses_an_oversized_export() {
 }
 
 #[test]
+fn bounded_reply_reports_whether_the_reply_fits() {
+    // The caller records the export's template only when it fits.
+    let big = oversized_result(super::super::MAX_FRAME_BYTES);
+    assert!(matches!(
+        bounded_reply("r", &big, "resume", "pdf", "classic"),
+        Bounded::TooLarge(_)
+    ));
+    let small = oversized_result(1024);
+    assert!(matches!(
+        bounded_reply("r", &small, "resume", "pdf", "classic"),
+        Bounded::Fits(_)
+    ));
+}
+
+#[test]
 fn success_or_capped_reply_carries_the_real_export_bytes_when_it_fits() {
     let result = oversized_result(1024);
     let reply = success_or_capped_reply("req-small", &result, "resume", "pdf", "classic");

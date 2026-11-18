@@ -36,7 +36,7 @@ fn saved_is_dropped_withdrawn_is_kept_without_an_outcome_and_newest_comes_first(
         app("saved", "saved", "", None),
         app("wd", "withdrawn", "", Some(NOW - 3 * DAY)),
     ];
-    let inputs = build_inputs(&apps, &[], |_| Vec::new(), NOW);
+    let inputs = build_inputs(&apps, &[], |_| Some(Vec::new()), NOW);
     let at: Vec<u64> = inputs.iter().map(|i| i.applied_at).collect();
     assert_eq!(at, vec![NOW - DAY, NOW - 2 * DAY, NOW - 3 * DAY]);
     assert_eq!(inputs[2].outcome, None);
@@ -46,7 +46,7 @@ fn saved_is_dropped_withdrawn_is_kept_without_an_outcome_and_newest_comes_first(
 fn a_missing_applied_at_falls_back_to_created_at() {
     let apps = [app("a", "rejected", "", None)];
     assert_eq!(
-        build_inputs(&apps, &[], |_| Vec::new(), NOW)[0].applied_at,
+        build_inputs(&apps, &[], |_| Some(Vec::new()), NOW)[0].applied_at,
         5
     );
 }
@@ -67,7 +67,7 @@ fn history_is_read_for_every_sent_status_except_withdrawn() {
         &[],
         |id| {
             asked.borrow_mut().push(id.to_string());
-            Vec::new()
+            Some(Vec::new())
         },
         NOW,
     );
@@ -84,7 +84,7 @@ fn an_unconfirmed_email_screening_is_pending_not_positive() {
         user_event("applied"),
         event("screening", EVENT_SOURCE_EMAIL, false),
     ];
-    let inputs = build_inputs(&apps, &[], |_| history.clone(), NOW);
+    let inputs = build_inputs(&apps, &[], |_| Some(history.clone()), NOW);
     assert_eq!(inputs[0].outcome, Some(Outcome::Pending));
 }
 
@@ -117,7 +117,10 @@ fn a_real_email_auto_write_is_not_counted_until_the_user_confirms_it() {
         )
         .unwrap());
 
-    let build = || build_inputs(&store.list(), &[], |a| store.events(a), NOW);
+    // The store stamps the real clock, so read "now" off the stored row.
+    let stored = store.get(&id).unwrap();
+    let clock = stored.applied_at.unwrap_or(stored.created_at) + DAY;
+    let build = || build_inputs(&store.list(), &[], |a| Some(store.events(a)), clock);
     assert_eq!(store.get(&id).unwrap().status, S::Screening);
     assert_eq!(build()[0].outcome, Some(Outcome::Pending));
 
@@ -134,7 +137,7 @@ fn rejected_after_screening_in_history_is_a_positive_reply() {
         user_event("screening"),
         user_event("rejected"),
     ];
-    let inputs = build_inputs(&apps, &[], |_| history.clone(), NOW);
+    let inputs = build_inputs(&apps, &[], |_| Some(history.clone()), NOW);
     assert_eq!(inputs[0].outcome, Some(Outcome::PositiveReply));
 }
 
@@ -151,7 +154,7 @@ fn a_generation_matches_by_normalized_url_and_carries_language_template_and_lett
         "Dear team",
         Some("atelier"),
     )];
-    let inputs = build_inputs(&apps, &gens, |_| Vec::new(), NOW);
+    let inputs = build_inputs(&apps, &gens, |_| Some(Vec::new()), NOW);
     let g = inputs[0].generation.as_ref().expect("job 1 is tailored");
     assert_eq!(
         (
@@ -173,7 +176,7 @@ fn an_unknown_or_garbage_stored_template_becomes_none_and_a_known_one_survives()
     let apps = [app("a", "applied", "https://acme.com/job/1", Some(NOW))];
     let template_for = |stored: &str| {
         let gens = [generation_row("https://acme.com/job/1", "", Some(stored))];
-        build_inputs(&apps, &gens, |_| Vec::new(), NOW)[0]
+        build_inputs(&apps, &gens, |_| Some(Vec::new()), NOW)[0]
             .generation
             .as_ref()
             .unwrap()
@@ -194,4 +197,62 @@ fn an_unknown_or_garbage_stored_template_becomes_none_and_a_known_one_survives()
     ] {
         assert_eq!(template_for(bad), None, "{bad:?}");
     }
+}
+
+#[test]
+fn an_application_whose_history_could_not_be_read_has_no_outcome_but_stays_in_the_window() {
+    let apps = [
+        app("whole", "rejected", "", Some(NOW - DAY)),
+        app("partial", "rejected", "", Some(NOW - 2 * DAY)),
+    ];
+    let inputs = build_inputs(
+        &apps,
+        &[],
+        |id| (id == "whole").then(|| vec![user_event("applied"), user_event("rejected")]),
+        NOW,
+    );
+    assert_eq!(inputs[0].outcome, Some(Outcome::Rejected));
+    assert_eq!(
+        inputs[1].outcome, None,
+        "a partial history is not a complete one"
+    );
+    assert_eq!(inputs.len(), 2, "it was still sent");
+}
+
+/// The user dismisses an email suggestion AFTER moving the status by hand: the dismissal
+/// does not revert, and must not turn the email's claim into a positive reply.
+#[test]
+fn dismissing_a_suggestion_after_a_manual_rejection_keeps_the_application_rejected() {
+    use crate::applications::{
+        ApplicationMeta, ApplicationOrigin, ApplicationStatus as S, ApplicationStore,
+    };
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = ApplicationStore::open(dir.path()).unwrap();
+    let id = store
+        .upsert_for_origin(
+            "https://acme.com/job/2",
+            "indeed",
+            &ApplicationMeta::default(),
+            ApplicationOrigin::Manual,
+            None,
+        )
+        .unwrap();
+    store
+        .transition_status_if_sourced(
+            &id,
+            S::Applied,
+            S::Screening,
+            None,
+            EVENT_SOURCE_EMAIL,
+            false,
+        )
+        .unwrap();
+    let suggestion = store.events(&id).last().unwrap().event_id;
+    store.set_status(&id, S::Rejected, "user rejected").unwrap();
+    assert!(!store.reject_status_event(&id, suggestion).unwrap());
+
+    let stored = store.get(&id).unwrap();
+    let clock = stored.applied_at.unwrap_or(stored.created_at) + DAY;
+    let inputs = build_inputs(&store.list(), &[], |a| Some(store.events(a)), clock);
+    assert_eq!(inputs[0].outcome, Some(Outcome::Rejected));
 }

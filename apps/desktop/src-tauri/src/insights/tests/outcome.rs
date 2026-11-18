@@ -1,4 +1,5 @@
 use super::support::*;
+use crate::applications::StatusEvent;
 use crate::applications::{ApplicationStatus as S, EVENT_SOURCE_EMAIL, EVENT_SOURCE_EMAIL_REJECT};
 use crate::insights::{classify, effective_status, ever_reached_positive, Outcome};
 
@@ -202,4 +203,54 @@ fn a_reversal_row_never_counts_as_reaching_a_stage() {
     let mut reversal = event("screening", EVENT_SOURCE_EMAIL_REJECT, true);
     reversal.from_status = "rejected".into();
     assert!(!ever_reached_positive(S::Applied, &[reversal]));
+}
+
+#[test]
+fn a_dismissed_email_suggestion_never_counts_even_when_the_status_moved_on_by_hand() {
+    // Unconfirmed email Screening, then the user marked it Rejected by hand, then dismissed
+    // the suggestion: the dismissal cannot revert, and it is not an acceptance.
+    let history = [
+        user_event("applied"),
+        dismissed_event("screening"),
+        user_event("rejected"),
+    ];
+    assert!(!ever_reached_positive(S::Rejected, &history));
+    assert_eq!(
+        outcome_of(S::Rejected, &history, NOW - DAY),
+        Some(Outcome::Rejected)
+    );
+}
+
+/// Two email writes (`first`, then a rejection) and the user dismissing the rejection:
+/// the reversal restores `first`'s status.
+fn dismissed_rejection_after(first: StatusEvent) -> [StatusEvent; 4] {
+    let mut reversal = event("interviewing", EVENT_SOURCE_EMAIL_REJECT, true);
+    reversal.from_status = "rejected".into();
+    [
+        user_event("applied"),
+        first,
+        dismissed_event("rejected"),
+        reversal,
+    ]
+}
+
+#[test]
+fn a_reversal_back_to_an_unconfirmed_email_status_is_not_trusted() {
+    let history = dismissed_rejection_after(event("interviewing", EVENT_SOURCE_EMAIL, false));
+    assert_eq!(effective_status(S::Interviewing, &history), S::Applied);
+    assert_eq!(
+        outcome_of(S::Interviewing, &history, NOW - DAY),
+        Some(Outcome::Pending),
+        "never a positive reply"
+    );
+}
+
+#[test]
+fn a_reversal_back_to_a_user_confirmed_status_is_trusted() {
+    let history = dismissed_rejection_after(user_event("interviewing"));
+    assert_eq!(effective_status(S::Interviewing, &history), S::Interviewing);
+    assert_eq!(
+        outcome_of(S::Interviewing, &history, NOW - DAY),
+        Some(Outcome::PositiveReply)
+    );
 }

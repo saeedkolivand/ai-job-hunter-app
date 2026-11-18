@@ -19,7 +19,7 @@ a module under `src/`.
 ```
 L3  Shell / IPC        commands, ipc_contracts, lib, app_menu, shell, main, updater, tray, deeplink, extension_bridge, notifications, events, crash_reporting
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
-                       autopilot_helpers, recommend, salary_research, sync
+                       autopilot_helpers, recommend, salary_research, sync, insights
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
                        conversations, credentials, job_preferences, contact_profile, ai_generations,
                        discovered, posting_history, spend, applications, referrals, profile_import, model, layout, measure,

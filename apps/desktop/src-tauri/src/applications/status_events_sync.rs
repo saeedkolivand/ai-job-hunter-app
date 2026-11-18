@@ -4,9 +4,11 @@
 //! An event's SQLite `rowid` only means something on the device that wrote
 //! it, so the record id is the event's content key instead —
 //! `(applicationId, at, fromStatus, toStatus, source)`. `note` and
-//! `confirmed` are left out of the key on purpose: they are what can change
-//! on an existing event (a pending email-derived event being accepted), and
-//! a change must update the record rather than add a second one.
+//! `confirmed` and `dismissed` are left out of the key on purpose: they are what can
+//! change on an existing event (a pending email-derived event being accepted or
+//! refused), and a change must update the record rather than add a second one.
+//! A dismissal is one-way: an older payload of the same event (still pending, or
+//! from a peer that predates `dismissed`) never un-dismisses it.
 //!
 //! Unlike a backup restore, an event whose application is not in the store
 //! yet is still written: the two sections arrive as separate records, and the
@@ -34,7 +36,7 @@ fn event_id(ev: &StatusEventRecord) -> String {
     ])
 }
 
-/// The event an id names, with `note`/`confirmed` taken from `payload`.
+/// The event an id names, with `note`/`confirmed`/`dismissed` taken from `payload`.
 fn event_of(id: &str, payload: &Value) -> AppResult<StatusEventRecord> {
     let key = split_id(id, 5)?;
     let at = key[1]
@@ -73,7 +75,9 @@ impl SyncSection for ApplicationStatusEvents<'_> {
         let mut guard = self.0.conn.lock();
         let tx = guard.transaction()?;
         let updated = tx.execute(
-            "UPDATE status_events SET note = ?6, confirmed = ?7
+            "UPDATE status_events SET note = ?6,
+                 confirmed = CASE WHEN dismissed = 1 OR ?8 = 1 THEN 1 ELSE ?7 END,
+                 dismissed = MAX(dismissed, ?8)
              WHERE application_id = ?1 AND at = ?2 AND from_status = ?3
                AND to_status = ?4 AND source = ?5",
             params![
@@ -84,13 +88,14 @@ impl SyncSection for ApplicationStatusEvents<'_> {
                 ev.source,
                 ev.note,
                 i64::from(ev.confirmed),
+                i64::from(ev.dismissed),
             ],
         )?;
         if updated == 0 {
             tx.execute(
                 "INSERT INTO status_events
-                    (application_id, from_status, to_status, at, note, source, confirmed)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    (application_id, from_status, to_status, at, note, source, confirmed, dismissed)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 params![
                     ev.application_id,
                     ev.from_status,
@@ -99,6 +104,7 @@ impl SyncSection for ApplicationStatusEvents<'_> {
                     ev.note,
                     ev.source,
                     i64::from(ev.confirmed),
+                    i64::from(ev.dismissed),
                 ],
             )?;
         }

@@ -77,6 +77,29 @@ fn a_later_content_save_keeps_the_recorded_template() {
 }
 
 #[test]
+fn a_content_save_built_from_a_stale_read_never_writes_the_old_template_back() {
+    let (_dir, store) = open_store();
+    insert(&store, "g1", JOB);
+    store.record_export_template(JOB, "classic").unwrap();
+    // The save reads (and merges onto) the row while it still says `classic` ...
+    let stale = merge_application(store.find_for_job(JOB).unwrap(), content_less("g-new", JOB));
+    // ... an export lands before the save's UPDATE runs.
+    store.record_export_template(JOB, "atelier").unwrap();
+    store.update(&stale).unwrap();
+
+    let rec = store.find_for_job(JOB).unwrap();
+    assert_eq!(rec.last_export_template.as_deref(), Some("atelier"));
+}
+
+#[test]
+fn recording_for_a_generation_deleted_in_the_meantime_reports_false() {
+    let (_dir, store) = open_store();
+    insert(&store, "g1", JOB);
+    assert!(store.set_export_template("g1", "atelier").unwrap());
+    assert!(!store.set_export_template("gone", "atelier").unwrap());
+}
+
+#[test]
 fn merge_prefers_the_incoming_template_and_falls_back_to_the_existing_one() {
     let mut existing = record("a", JOB);
     existing.last_export_template = Some("classic".into());

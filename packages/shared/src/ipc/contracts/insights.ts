@@ -59,9 +59,16 @@ export interface InsightsVolumeNudge {
   applications: number;
   /** Of those, how many have no AI generation for their job. */
   untailored: number;
-  /** Of those, how many carry a non-empty cover letter. */
+  /**
+   * Of those, how many carry a non-empty cover letter, counted over the newest sample
+   * the nudge compares (capped at `MAX_NUDGE_LETTERS` in the Rust `insights` module),
+   * not necessarily every letter in the window.
+   */
   letters: number;
-  /** Of those letters, how many are near-copies of another letter in the window. */
+  /**
+   * Of those sampled letters, how many are near-copies of another sampled letter. The
+   * `nearCopyLetters` trigger is judged over the same capped sample.
+   */
   nearCopyLetters: number;
   /** The conditions that held; never empty (the nudge is `null` otherwise). */
   triggers: InsightsNudgeTrigger[];

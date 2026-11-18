@@ -14,13 +14,15 @@ fn is_positive_stage(status: &str) -> bool {
 ///
 /// An email-derived row counts only once the user has confirmed it and no later
 /// reversal (the user rejecting that very suggestion) undid it; reversal rows
-/// themselves never count, they only restore an earlier state.
+/// themselves never count, they only restore an earlier state, and a dismissed
+/// email row (rejected without a revert, because the status had moved on) never counts.
 pub fn ever_reached_positive(current: ApplicationStatus, events: &[StatusEvent]) -> bool {
     if is_positive_stage(current.as_id()) {
         return true;
     }
     events.iter().enumerate().any(|(i, e)| {
-        if !is_positive_stage(&e.to_status) || e.source == EVENT_SOURCE_EMAIL_REJECT {
+        if !is_positive_stage(&e.to_status) || e.source == EVENT_SOURCE_EMAIL_REJECT || e.dismissed
+        {
             return false;
         }
         if e.source != EVENT_SOURCE_EMAIL {
@@ -34,22 +36,41 @@ pub fn ever_reached_positive(current: ApplicationStatus, events: &[StatusEvent])
 }
 
 /// The status that counts for outcomes. An email auto-write sets the row's status
-/// at once and appends an unreviewed event, so while the latest event is such a
-/// write the current status is a suggestion, not a fact: fall back to the status of
-/// the newest event that is not one (`Applied` when none exists).
+/// at once and appends an unreviewed event, so while the status rests on such a
+/// write it is a suggestion, not a fact: fall back to the last status that does not
+/// (`Applied` when none exists). A reversal (the user rejecting a later suggestion)
+/// restores an earlier status, and that status is only as trustworthy as the
+/// transition that established it, so it is resolved by that transition's provenance.
 pub fn effective_status(current: ApplicationStatus, events: &[StatusEvent]) -> ApplicationStatus {
-    if !events
-        .last()
-        .is_some_and(StatusEvent::is_unconfirmed_email_write)
-    {
-        return current;
+    match events.last() {
+        Some(last)
+            if last.is_unconfirmed_email_write() || last.source == EVENT_SOURCE_EMAIL_REJECT =>
+        {
+            trusted_status(events)
+        }
+        _ => current,
     }
-    events
-        .iter()
-        .rfind(|e| !e.is_unconfirmed_email_write())
-        .map_or(ApplicationStatus::Applied, |e| {
-            ApplicationStatus::from_id(&e.to_status)
-        })
+}
+
+/// The status after `events`, counting only transitions the user stands behind.
+fn trusted_status(events: &[StatusEvent]) -> ApplicationStatus {
+    let Some((last, before)) = events.split_last() else {
+        return ApplicationStatus::Applied;
+    };
+    if last.is_unconfirmed_email_write() || last.dismissed {
+        return trusted_status(before);
+    }
+    if last.source == EVENT_SOURCE_EMAIL_REJECT {
+        // A reversal walks back to `to_status`: trust it as much as whatever set it.
+        return match before
+            .iter()
+            .rposition(|e| e.to_status == last.to_status && !e.dismissed)
+        {
+            Some(set_by) => trusted_status(&events[..=set_by]),
+            None => ApplicationStatus::from_id(&last.to_status),
+        };
+    }
+    ApplicationStatus::from_id(&last.to_status)
 }
 
 /// The outcome of one application, or `None` when it is excluded from every

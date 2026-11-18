@@ -290,7 +290,8 @@ export interface DocumentsContract {
    * `generationJobUrl` (optional) names the job whose AI generation is being exported:
    * once the file is saved, that generation remembers the template used, which feeds
    * the template grouping of `insights.outcomes`. Omit it for an export that belongs
-   * to no generation.
+   * to no generation. Recording the template is best-effort bookkeeping: a successful
+   * save does not guarantee the template was recorded (no generation, a store error).
    */
   exportAndSave(req: BaseExportRequest, generationJobUrl?: string): Promise<string>;
 

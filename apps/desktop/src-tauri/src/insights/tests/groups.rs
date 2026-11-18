@@ -252,17 +252,41 @@ fn groups_are_ordered_by_dimension_then_key_and_the_report_carries_its_time() {
 }
 
 #[test]
-fn an_oversized_group_key_is_capped_on_a_char_boundary() {
-    // 3-byte chars: 64 bytes falls mid-character, so the cap must back off to 63.
+fn an_oversized_group_key_stays_bounded_on_a_char_boundary_and_a_short_one_is_unchanged() {
+    // 3-byte chars: the prefix must back off to a boundary, and the key stays within the cap.
     let long = "€".repeat(100);
     let inputs = vec![input(NOW, &long, Some(Outcome::Rejected), None)];
     let groups = report(&inputs, NOW).groups;
     let key = &groups[0].key;
     assert_eq!(groups[0].dimension, Dimension::Board);
-    assert_eq!(key.len(), 63);
-    assert_eq!(*key, "€".repeat(21));
+    assert!(key.len() <= 64, "{}", key.len());
+    assert!(key.starts_with("€€€"));
 
     let ascii = "a".repeat(500);
     let inputs = vec![input(NOW, &ascii, Some(Outcome::Rejected), None)];
     assert_eq!(report(&inputs, NOW).groups[0].key.len(), 64);
+
+    let exactly_cap = "b".repeat(64);
+    let inputs = vec![input(NOW, &exactly_cap, Some(Outcome::Rejected), None)];
+    assert_eq!(report(&inputs, NOW).groups[0].key, exactly_cap);
+}
+
+#[test]
+fn two_long_boards_differing_only_past_the_cap_stay_separate_groups() {
+    let a = format!("{}x", "a".repeat(100));
+    let b = format!("{}y", "a".repeat(100));
+    let mut inputs = many(2, &a, Outcome::Rejected, NOW);
+    inputs.extend(many(3, &b, Outcome::NoReply, NOW));
+    let groups = report(&inputs, NOW).groups;
+    let boards: Vec<&OutcomeGroup> = groups
+        .iter()
+        .filter(|g| g.dimension == Dimension::Board)
+        .collect();
+    assert_eq!(boards.len(), 2);
+    let mut totals: Vec<u32> = boards
+        .iter()
+        .map(|g| g.counts.rejected + g.counts.no_reply)
+        .collect();
+    totals.sort_unstable();
+    assert_eq!(totals, vec![2, 3]);
 }

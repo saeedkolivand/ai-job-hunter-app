@@ -41,6 +41,9 @@ pub(crate) struct StatusEventRecord {
     pub note: String,
     pub source: String,
     pub confirmed: bool,
+    /// Refused by the user (see `StatusEvent::dismissed`); absent from an older bundle.
+    #[serde(default)]
+    pub dismissed: bool,
 }
 
 /// The `applicationStatusEvents` bundle section over an [`ApplicationStore`].
@@ -58,7 +61,7 @@ impl ApplicationStatusEvents<'_> {
     fn records(&self) -> AppResult<Vec<StatusEventRecord>> {
         let conn = self.0.conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT application_id, from_status, to_status, at, note, source, confirmed
+            "SELECT application_id, from_status, to_status, at, note, source, confirmed, dismissed
              FROM status_events ORDER BY application_id ASC, at ASC, rowid ASC",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -70,6 +73,7 @@ impl ApplicationStatusEvents<'_> {
                 note: row.get(4)?,
                 source: row.get(5)?,
                 confirmed: row.get::<_, i64>(6)? != 0,
+                dismissed: row.get::<_, i64>(7)? != 0,
             })
         })?;
         // Fail the whole read rather than skip a row: a backup missing events
@@ -115,8 +119,8 @@ impl DataStore for ApplicationStatusEvents<'_> {
         for ev in &events {
             written += tx.execute(
                 "INSERT INTO status_events
-                    (application_id, from_status, to_status, at, note, source, confirmed)
-                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7
+                    (application_id, from_status, to_status, at, note, source, confirmed, dismissed)
+                 SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8
                  WHERE EXISTS (SELECT 1 FROM applications WHERE id = ?1)",
                 params![
                     ev.application_id,
@@ -126,6 +130,7 @@ impl DataStore for ApplicationStatusEvents<'_> {
                     ev.note,
                     ev.source,
                     i64::from(ev.confirmed),
+                    i64::from(ev.dismissed),
                 ],
             )?;
         }

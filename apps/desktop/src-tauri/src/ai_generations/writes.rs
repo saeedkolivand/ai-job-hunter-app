@@ -20,8 +20,11 @@ impl AiGenerationStore {
         Ok(())
     }
 
-    /// Overwrite an existing row by id (used by the per-job merge-upsert).
-    fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
+    /// Overwrite an existing row's content by id (used by the per-job merge-upsert).
+    /// Deliberately never writes `last_export_template`: that column belongs to
+    /// [`record_export_template`](Self::record_export_template), and a merge built from
+    /// an earlier read would write a stale template over a newer export's.
+    pub(super) fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
         let answers_json = serde_json::to_string(&rec.application_answers).unwrap_or_default();
         let interview_questions_json =
@@ -37,7 +40,7 @@ impl AiGenerationStore {
               cover_letter_text = ?12, job_ad = ?13, job_url = ?14, board = ?15,
               application_answers = ?16, company_brief = ?17, application_id = ?18,
               interview_questions = ?19, email_subject = ?20, email_body = ?21,
-              quality_report = ?22, last_export_template = ?23
+              quality_report = ?22
              WHERE id = ?1",
             params![
                 rec.id,
@@ -62,7 +65,6 @@ impl AiGenerationStore {
                 rec.email_subject,
                 rec.email_body,
                 rec.quality_report,
-                rec.last_export_template,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -121,15 +123,21 @@ impl AiGenerationStore {
     /// url first, raw fallback). A job with no generation is a no-op (`Ok(false)`):
     /// a base résumé export has nothing to annotate.
     pub fn record_export_template(&self, job_url: &str, template: &str) -> AppResult<bool> {
-        let Some(found) = self.find_for_job(job_url) else {
-            return Ok(false);
-        };
+        match self.find_for_job(job_url) {
+            Some(found) => self.set_export_template(&found.id, template),
+            None => Ok(false),
+        }
+    }
+
+    /// The row write of [`record_export_template`](Self::record_export_template): `false`
+    /// when no row has `id` (the generation was deleted after it was looked up).
+    pub(super) fn set_export_template(&self, id: &str, template: &str) -> AppResult<bool> {
         let conn = self.conn.lock();
-        conn.execute(
+        let changed = conn.execute(
             "UPDATE ai_generations SET last_export_template = ?2 WHERE id = ?1",
-            params![found.id, template],
+            params![id, template],
         )?;
-        Ok(true)
+        Ok(changed > 0)
     }
 
     /// Overwrite ONE row's `quality_report`, selected by `id`.

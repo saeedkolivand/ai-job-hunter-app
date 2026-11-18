@@ -131,9 +131,11 @@ pub struct VolumeNudge {
     pub applications: u32,
     /// Of those, how many have no generation.
     pub untailored: u32,
-    /// Of those, how many carry a non-empty cover letter.
+    /// Of those, how many carry a non-empty cover letter, counted over the newest sample
+    /// the nudge compares (capped at [`MAX_NUDGE_LETTERS`]), not every letter in the window.
     pub letters: u32,
-    /// Of those letters, how many near-copy another letter in the window.
+    /// Of those sampled letters, how many near-copy another sampled letter; the
+    /// [`NudgeTrigger::NearCopyLetters`] trigger is judged over the same capped sample.
     pub near_copy_letters: u32,
     pub triggers: Vec<NudgeTrigger>,
 }

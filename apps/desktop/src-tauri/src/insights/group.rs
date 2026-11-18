@@ -9,17 +9,35 @@ use super::{
     MIN_GROUP_SAMPLE, UNKNOWN_KEY,
 };
 
+/// Hex chars of the SHA-256 kept in a shortened key.
+const DIGEST_HEX: usize = 16;
+
 fn or_unknown(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+
     let s = s.trim();
     if s.is_empty() {
         return UNKNOWN_KEY.to_string();
     }
-    // Board and language come from stored or synced text: cap, on a char boundary.
-    let end = (0..=MAX_GROUP_KEY_BYTES.min(s.len()))
+    if s.len() <= MAX_GROUP_KEY_BYTES {
+        return s.to_string();
+    }
+    // Board and language come from stored or synced text. A plain cut would merge two
+    // long values that differ only past it, so an over-cap value becomes a bounded
+    // prefix (on a char boundary) plus a digest of the FULL value; the key stays bounded.
+    let digest = Sha256::digest(s.as_bytes())
+        .iter()
+        .take(DIGEST_HEX / 2)
+        .fold(String::with_capacity(DIGEST_HEX), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        });
+    let end = (0..=MAX_GROUP_KEY_BYTES - DIGEST_HEX - 1)
         .rev()
         .find(|&i| s.is_char_boundary(i))
         .unwrap_or(0);
-    s[..end].to_string()
+    format!("{}#{digest}", &s[..end])
 }
 
 fn month_key(ms: u64) -> String {

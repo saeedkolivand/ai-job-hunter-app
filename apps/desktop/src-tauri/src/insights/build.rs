@@ -42,12 +42,14 @@ pub struct AppInput {
 }
 
 /// Inputs for every application that was ever sent (not `saved`), newest first.
-/// `events_of` returns one application's status history, oldest first; it is
-/// asked about every sent application except a withdrawn one.
+/// `events_of` returns one application's status history, oldest first, or `None` when
+/// it could not be read in full: that application is excluded from the outcome counts
+/// (a partial history must not read as a complete one). It is asked about every sent
+/// application except a withdrawn one.
 pub fn build_inputs(
     apps: &[Application],
     generations: &[AiGenerationRecord],
-    events_of: impl Fn(&str) -> Vec<StatusEvent>,
+    events_of: impl Fn(&str) -> Option<Vec<StatusEvent>>,
     now: u64,
 ) -> Vec<AppInput> {
     let by_url: HashMap<String, &AiGenerationRecord> = generations
@@ -62,12 +64,19 @@ pub fn build_inputs(
             let applied_at = a.applied_at.unwrap_or(a.created_at);
             // Withdrawn is excluded whatever its history says; every other sent
             // status can be an unreviewed email suggestion, so read its history.
-            let history = if a.status == ApplicationStatus::Withdrawn {
-                Vec::new()
+            let outcome = if a.status == ApplicationStatus::Withdrawn {
+                None
             } else {
-                events_of(&a.id)
+                events_of(&a.id).and_then(|history| {
+                    let status = effective_status(a.status, &history);
+                    classify(
+                        status,
+                        ever_reached_positive(status, &history),
+                        applied_at,
+                        now,
+                    )
+                })
             };
-            let status = effective_status(a.status, &history);
             let generation = by_url
                 .get(a.job_url.as_str())
                 .filter(|_| !a.job_url.is_empty())
@@ -79,12 +88,7 @@ pub fn build_inputs(
             AppInput {
                 applied_at,
                 board: a.board.clone(),
-                outcome: classify(
-                    status,
-                    ever_reached_positive(status, &history),
-                    applied_at,
-                    now,
-                ),
+                outcome,
                 generation,
             }
         })

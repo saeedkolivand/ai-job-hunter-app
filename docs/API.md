@@ -2348,7 +2348,8 @@ Render, ask the user where to save, and write the file; resolves to the saved pa
 `generationJobUrl` (optional) names the job whose AI generation is being exported:
 once the file is saved, that generation remembers the template used, which feeds
 the template grouping of `insights.outcomes`. Omit it for an export that belongs
-to no generation.
+to no generation. Recording the template is best-effort bookkeeping: a successful
+save does not guarantee the template was recorded (no generation, a store error).
 
 #### `documents.renderPreviewImages`
 
@@ -3281,9 +3282,16 @@ export interface InsightsVolumeNudge {
   applications: number;
   /** Of those, how many have no AI generation for their job. */
   untailored: number;
-  /** Of those, how many carry a non-empty cover letter. */
+  /**
+   * Of those, how many carry a non-empty cover letter, counted over the newest sample
+   * the nudge compares (capped at `MAX_NUDGE_LETTERS` in the Rust `insights` module),
+   * not necessarily every letter in the window.
+   */
   letters: number;
-  /** Of those letters, how many are near-copies of another letter in the window. */
+  /**
+   * Of those sampled letters, how many are near-copies of another sampled letter. The
+   * `nearCopyLetters` trigger is judged over the same capped sample.
+   */
   nearCopyLetters: number;
   /** The conditions that held; never empty (the nudge is `null` otherwise). */
   triggers: InsightsNudgeTrigger[];

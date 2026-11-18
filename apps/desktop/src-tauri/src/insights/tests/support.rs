@@ -18,6 +18,15 @@ pub(super) fn event(to: &str, source: &str, confirmed: bool) -> StatusEvent {
         note: String::new(),
         source: source.into(),
         confirmed,
+        dismissed: false,
+    }
+}
+
+/// An email event the user reviewed and refused.
+pub(super) fn dismissed_event(to: &str) -> StatusEvent {
+    StatusEvent {
+        dismissed: true,
+        ..event(to, crate::applications::EVENT_SOURCE_EMAIL, true)
     }
 }
 
