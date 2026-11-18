@@ -14,6 +14,7 @@ export const appNamespaces = (): Pick<
   | 'menu'
   | 'notifications'
   | 'dialog'
+  | 'insights'
   | 'export'
 > => ({
   export: {
@@ -29,6 +30,10 @@ export const appNamespaces = (): Pick<
       readingOrder: { status: 'found' },
       summary: { found: 1, suspicious: 0, missing: 4, total: 5 },
     }),
+  },
+
+  insights: {
+    outcomes: async () => ({ groups: [], nudge: null, generatedAt: 0 }),
   },
 
   updater: {

@@ -33,6 +33,7 @@ import { extensionBridge } from './namespaces/extensionBridge/index.js';
 import { geocode } from './namespaces/geocode/index.js';
 import { github } from './namespaces/github/index.js';
 import { help } from './namespaces/help/index.js';
+import { insights } from './namespaces/insights/index.js';
 import { jobPreferences } from './namespaces/jobPreferences/index.js';
 import { jobs } from './namespaces/jobs/index.js';
 import { linkedin } from './namespaces/linkedin/index.js';
@@ -65,6 +66,7 @@ export function createTauriInvokeClient(): AppClient {
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
     emailWatch: emailWatch as AppClient['emailWatch'],
     sync: sync as AppClient['sync'],
+    insights: insights as AppClient['insights'],
     export: exportNs as AppClient['export'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],

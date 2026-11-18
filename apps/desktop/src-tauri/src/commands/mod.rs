@@ -22,6 +22,7 @@ pub(crate) mod ghost;
 pub mod github;
 pub mod help;
 pub mod hybrid_search;
+pub mod insights;
 pub mod job_preferences;
 pub mod jobs;
 pub mod match_resume;

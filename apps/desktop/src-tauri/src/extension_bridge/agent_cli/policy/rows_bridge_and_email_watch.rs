@@ -159,6 +159,12 @@ pub(super) const BRIDGE_AND_EMAIL_WATCH: &[PolicyEntry] = &[
             path: &["serverUrl"],
         }),
     },
+    // commands/insights.rs — outcome insights + volume nudge: derived on read from
+    // the user's own application/generation rows, nothing written, no egress.
+    PolicyEntry {
+        path: "commands::insights::insights_outcomes",
+        effect: Effect::Read,
+    },
     // export/commands/mod.rs
     // Verified: renders and returns the bytes plus the advisory `atsView` derived from
     // them (a pure, bounded reading of the caller's own request text) — no filesystem write.

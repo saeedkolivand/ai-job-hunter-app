@@ -91,6 +91,14 @@ fn default_event_confirmed() -> bool {
     true
 }
 
+impl StatusEvent {
+    /// The row-level form of [`ApplicationStore::current_status_is_unconfirmed_email_write`]'s
+    /// test (applied to the LATEST row): an email-derived write nobody has reviewed.
+    pub(crate) fn is_unconfirmed_email_write(&self) -> bool {
+        self.source == EVENT_SOURCE_EMAIL && !self.confirmed
+    }
+}
+
 impl ApplicationStore {
     /// History for one Application, oldest-first. `rowid` is a tie-break
     /// ONLY (two events landing in the same millisecond still order

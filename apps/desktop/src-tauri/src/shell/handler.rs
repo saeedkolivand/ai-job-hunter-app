@@ -212,6 +212,8 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         commands::sync::sync_configure,
         commands::sync::sync_disable,
         commands::sync::sync_now,
+        // outcome insights + volume nudge (read-only, derived on read)
+        commands::insights::insights_outcomes,
         // export
         export::commands::documents_export_document,
         export::commands::documents_export_and_save,

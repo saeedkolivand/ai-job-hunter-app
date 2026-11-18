@@ -67,12 +67,10 @@ pub use status_events_backup::ApplicationStatusEvents;
 // `writes`/`backup` siblings' `set_status`/`upsert_internal`/`import` need
 // `EVENT_SOURCE_USER` too; `crate::email_watch::auto_write` needs
 // `EVENT_SOURCE_EMAIL`).
-// `EVENT_SOURCE_EMAIL_REJECT` has no consumer outside `applications` yet — see
-// `status_events::EVENT_SOURCE_EMAIL_REJECT` directly (reachable from any
-// descendant module, e.g. `applications::tests`) rather than re-exporting an
-// unused-in-production name here.
+// `EVENT_SOURCE_EMAIL_REJECT` is re-exported for `crate::insights`, which must
+// tell a reversal row from an assertion when deriving "ever reached a stage".
 pub use status_events::StatusEvent;
-pub(crate) use status_events::{EVENT_SOURCE_EMAIL, EVENT_SOURCE_USER};
+pub(crate) use status_events::{EVENT_SOURCE_EMAIL, EVENT_SOURCE_EMAIL_REJECT, EVENT_SOURCE_USER};
 // The aggregate's types and size caps (see `model`) and the answer-list helpers
 // (see `answers`) keep resolving at `crate::applications::X` exactly as before
 // the split.
