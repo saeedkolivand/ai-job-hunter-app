@@ -10,7 +10,7 @@ import type {
 
 import { getClient, useAppClient } from '@/providers/AppClientProvider';
 
-import { keys, queryClient } from '../query-client';
+import { invalidateApplications, keys, queryClient } from '../query-client';
 
 export const useApplications = () => {
   const api = useAppClient();
@@ -47,7 +47,7 @@ export const useSetApplicationStatus = () => {
     mutationFn: ({ id, status, note }: { id: string; status: string; note?: string }) =>
       api.applications.setStatus({ id, status, note }),
     onSuccess: (_data, { id }) => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
       void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });
     },
   });
@@ -67,7 +67,7 @@ export const useAcceptStatusEvent = () => {
     mutationFn: ({ id, eventId }: { id: string; eventId: number }) =>
       api.applications.acceptStatusEvent({ id, eventId }),
     onSuccess: (_data, { id }) => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
       void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });
     },
   });
@@ -84,7 +84,7 @@ export const useRejectStatusEvent = () => {
     mutationFn: ({ id, eventId }: { id: string; eventId: number }) =>
       api.applications.rejectStatusEvent({ id, eventId }),
     onSuccess: (_data, { id }) => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
       void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });
     },
   });
@@ -96,7 +96,7 @@ export const useUpdateApplication = () => {
   return useMutation({
     mutationFn: (req: ApplicationUpdateRequest) => api.applications.update(req),
     onSuccess: (_data, req) => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
       void qc.invalidateQueries({ queryKey: keys.applications.detail(req.id) });
     },
   });
@@ -109,7 +109,7 @@ export const useRemoveApplication = () => {
     mutationFn: ({ id, keepDocuments }: { id: string; keepDocuments: boolean }) =>
       api.applications.remove({ id, keepDocuments }),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
     },
   });
 };
@@ -120,7 +120,7 @@ export const useTrackApplication = () => {
   return useMutation({
     mutationFn: (req: ApplicationTrackRequest) => api.applications.track(req),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
     },
   });
 };
@@ -131,7 +131,7 @@ export const useSaveFromPosting = () => {
   return useMutation({
     mutationFn: (req: ApplicationTrackRequest) => api.applications.saveFromPosting(req),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
     },
   });
 };
@@ -153,7 +153,7 @@ export const useApplicationEvents = (onChanged?: (event: ApplicationChangedEvent
   handlerRef.current = onChanged;
   useEffect(() => {
     const off = api.applications.onChanged((event) => {
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
       // An open detail page for the imported application must refresh too — its
       // status/docs can change on import (e.g. an Indeed import that now lands on the
       // right row). Invalidate the exact detail key explicitly so it refetches.

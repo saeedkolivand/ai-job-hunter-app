@@ -66,6 +66,15 @@ const report = (over: Partial<InsightsOutcomesReport> = {}): InsightsOutcomesRep
   ...over,
 });
 
+/** The listitem row of `label` inside `section`; throws (so the test fails loudly) when absent. */
+const rowOf = (section: HTMLElement, label: string): HTMLElement => {
+  const row = within(section)
+    .getAllByRole('listitem')
+    .find((li) => within(li).queryByText(label) !== null);
+  if (!row) throw new Error(`no row labelled ${label}`);
+  return row;
+};
+
 describe('InsightsPage', () => {
   beforeEach(() => {
     mockState = {};
@@ -76,7 +85,7 @@ describe('InsightsPage', () => {
     mockState = { isLoading: true };
     const { container } = render(<InsightsPage />);
     expect(container.querySelector('.animate-pulse, [class*="skeleton"]')).not.toBeNull();
-    expect(screen.queryByText('No applications yet')).not.toBeInTheDocument();
+    expect(screen.queryByText('No application outcomes to show')).not.toBeInTheDocument();
   });
 
   it('shows a retryable error state', () => {
@@ -90,7 +99,7 @@ describe('InsightsPage', () => {
   it('shows the empty state when no application has been sent', () => {
     mockState = { data: report({ groups: [] }) };
     render(<InsightsPage />);
-    expect(screen.getByText('No applications yet')).toBeInTheDocument();
+    expect(screen.getByText('No application outcomes to show')).toBeInTheDocument();
   });
 
   it('shows the headline totals and the positive-reply definition', () => {
@@ -120,14 +129,16 @@ describe('InsightsPage', () => {
     render(<InsightsPage />);
     const boards = screen.getByRole('region', { name: 'By job board' });
 
-    const adzuna = within(boards).getByText('adzuna').closest('li') as HTMLElement;
+    const adzuna = rowOf(boards, 'adzuna');
+    expect(within(adzuna).getByRole('meter')).toHaveAttribute('aria-valuenow', '25');
     expect(within(adzuna).getByText('25% positive replies')).toBeInTheDocument();
     expect(
       within(adzuna).getByText('2 positive · 2 rejected · 4 no reply · 1 pending')
     ).toBeInTheDocument();
     expect(within(adzuna).queryByText('Not enough data yet')).not.toBeInTheDocument();
 
-    const remoteok = within(boards).getByText('remoteok').closest('li') as HTMLElement;
+    const remoteok = rowOf(boards, 'remoteok');
+    expect(within(remoteok).queryByRole('meter')).not.toBeInTheDocument();
     expect(within(remoteok).getByText('Not enough data yet')).toBeInTheDocument();
     expect(
       within(remoteok).getByText('1 positive · 0 rejected · 1 no reply · 0 pending')
@@ -154,9 +165,9 @@ describe('InsightsPage', () => {
     render(<InsightsPage />);
     const section = screen.getByRole('region', { name: 'By language' });
     const rows = within(section).getAllByRole('listitem');
-    expect(within(rows[0] as HTMLElement).getByText('English')).toBeInTheDocument();
-    expect(within(rows[1] as HTMLElement).getByText('No generation')).toBeInTheDocument();
-    const noGen = rows[1] as HTMLElement;
+    expect(rows).toHaveLength(2);
+    const [english, noGen] = [rowOf(section, 'English'), rowOf(section, 'No generation')];
+    expect(rows).toEqual([english, noGen]);
     const hint = within(noGen).getByText(/without a generated résumé or letter/);
     const stats = within(noGen).getByText(/0 positive/);
     // label, bar, stats, then the hint: same rhythm as every other row
@@ -172,7 +183,9 @@ describe('InsightsPage', () => {
     render(<InsightsPage />);
     const section = screen.getByRole('region', { name: 'By résumé template' });
     expect(within(section).getByText('Template not recorded')).toBeInTheDocument();
-    expect(within(section).getByText(/before templates were tracked/)).toBeInTheDocument();
+    expect(
+      within(section).getByText(/No recognized export template is recorded/)
+    ).toBeInTheDocument();
     expect(within(section).queryByText('No generation')).not.toBeInTheDocument();
   });
 
@@ -185,6 +198,44 @@ describe('InsightsPage', () => {
     render(<InsightsPage />);
     expect(screen.getByText('Unknown')).toBeInTheDocument();
     expect(screen.queryByText('No generation')).not.toBeInTheDocument();
+  });
+
+  it('shows the volume nudge even when there are no outcome groups', () => {
+    mockState = {
+      data: report({
+        groups: [],
+        nudge: {
+          windowHours: 24,
+          applications: 5,
+          untailored: 3,
+          letters: 0,
+          nearCopyLetters: 0,
+          triggers: ['untailored'],
+        },
+      }),
+    };
+    render(<InsightsPage />);
+    const nudge = screen.getByRole('region', { name: '5 applications in the last 24 hours' });
+    expect(
+      within(nudge).getByText('3 of them have no generation recorded in the app.')
+    ).toBeInTheDocument();
+    expect(screen.getByText('No application outcomes to show')).toBeInTheDocument();
+  });
+
+  it('keeps the cached report with an out-of-date note and a retry when a refresh fails', () => {
+    mockState = { data: report(), isError: true };
+    render(<InsightsPage />);
+    expect(screen.getByText('30% positive reply rate')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent(/Out of date/);
+    expect(screen.queryByText('Insights could not be loaded')).not.toBeInTheDocument();
+    screen.getByRole('button', { name: 'Refresh' }).click();
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it('shows when the report was generated', () => {
+    mockState = { data: report({ generatedAt: Date.now() - 5 * 60_000 }) };
+    render(<InsightsPage />);
+    expect(screen.getByText('Updated 5m ago')).toBeInTheDocument();
   });
 
   it('shows no nudge when the report has none', () => {
@@ -210,7 +261,9 @@ describe('InsightsPage', () => {
     const nudge = screen.getByRole('region', { name: '12 applications in the last 24 hours' });
     expect(within(nudge).getByText('12 applications in the last 24 hours')).toBeInTheDocument();
     expect(
-      within(nudge).getByText('6 of 8 cover letters are near-identical to another one.')
+      within(nudge).getByText(
+        '6 of the 8 newest cover letters compared are near-identical to another one.'
+      )
     ).toBeInTheDocument();
     expect(within(nudge).getByText(/Tailoring each application/)).toBeInTheDocument();
     expect(screen.queryByRole('status')).not.toBeInTheDocument();

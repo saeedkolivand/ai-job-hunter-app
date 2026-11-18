@@ -62,6 +62,7 @@ describe('useSaveAiGeneration — post-save invalidation', () => {
     // applications list and the detail page's status chip/timeline keep showing
     // the pre-save status until something else happens to refetch them.
     expect(invalidated).toContainEqual(keys.applications.all);
+    expect(invalidated).toContainEqual(keys.insights.outcomes);
   });
 });
 

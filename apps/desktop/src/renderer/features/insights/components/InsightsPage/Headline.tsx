@@ -14,14 +14,14 @@ export function Headline({ headline }: { headline: HeadlineData }) {
           ? t('insights.headline.noRate')
           : t('insights.headline.rate', { percent: Math.round(rate * 100) })}
       </p>
-      <p className="text-[12px] tabular-nums text-foreground/65">
+      <p className="text-[12px] tabular-nums text-foreground/70">
         {t('insights.headline.counts', {
           positive: counts.positiveReply,
           decided,
           pending: counts.pending,
         })}
       </p>
-      <p className="text-[11px] text-foreground/65">{t('insights.headline.definition')}</p>
+      <p className="text-[11px] text-foreground/70">{t('insights.headline.definition')}</p>
     </GlassCard>
   );
 }

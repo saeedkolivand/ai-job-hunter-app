@@ -39,6 +39,7 @@ describe('app-global received-data refresh', () => {
     expect(queryClient.getQueryState(keys.contactProfile.all)?.isInvalidated).toBe(true);
     for (const queryKey of [
       keys.applications.all,
+      keys.insights.outcomes,
       keys.documents.all,
       keys.aiGenerations.all,
       keys.contactProfile.all,

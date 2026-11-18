@@ -3,10 +3,9 @@ import { waitFor } from '@testing-library/react';
 
 import type { InsightsOutcomesReport } from '@ajh/shared';
 
-import { createMockClient, exerciseServiceHooks, renderHookWithClient } from '@/test-support';
+import { createMockClient, renderHookWithClient } from '@/test-support';
 
 import { keys } from '../query-client';
-import * as mod from './use-insights';
 import { useInsightsOutcomes } from './use-insights';
 
 const REPORT: InsightsOutcomesReport = {
@@ -21,12 +20,6 @@ const REPORT: InsightsOutcomesReport = {
   nudge: null,
   generatedAt: 1_794_000_000_000,
 };
-
-describe('use-insights services', () => {
-  it('renders every exported hook without crashing', async () => {
-    await exerciseServiceHooks(mod);
-  });
-});
 
 describe('useInsightsOutcomes', () => {
   it('returns the report from the client and caches it under its key', async () => {

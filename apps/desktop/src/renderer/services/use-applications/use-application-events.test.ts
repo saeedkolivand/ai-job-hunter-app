@@ -97,8 +97,10 @@ describe('useApplicationEvents', () => {
     const calledKeys = invalidate.mock.calls.map((c) => (c[0] as { queryKey: unknown }).queryKey);
     expect(calledKeys).toContainEqual(keys.applications.all);
     expect(calledKeys).toContainEqual(keys.postings.all);
-    // Exactly two invalidations per event — no extra side-effects.
-    expect(invalidate).toHaveBeenCalledTimes(2);
+    // The open Insights report is derived from the applications table.
+    expect(calledKeys).toContainEqual(keys.insights.outcomes);
+    // Exactly three invalidations per event — no extra side-effects.
+    expect(invalidate).toHaveBeenCalledTimes(3);
   });
 
   it('forwards the event to the optional onChanged callback', async () => {

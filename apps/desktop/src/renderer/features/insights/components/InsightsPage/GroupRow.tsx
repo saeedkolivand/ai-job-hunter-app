@@ -29,7 +29,11 @@ export function GroupRow({
       </div>
       {percent !== null ? (
         <div
-          aria-hidden="true"
+          role="meter"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percent}
           className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/10"
         >
           <motion.div
@@ -40,9 +44,9 @@ export function GroupRow({
           />
         </div>
       ) : (
-        <p className="text-[12px] text-foreground/65">{t('insights.notEnoughData')}</p>
+        <p className="text-[12px] text-foreground/70">{t('insights.notEnoughData')}</p>
       )}
-      <p className="text-[12px] tabular-nums text-foreground/65">
+      <p className="text-[12px] tabular-nums text-foreground/70">
         {t('insights.counts', {
           positive: counts.positiveReply,
           rejected: counts.rejected,
@@ -50,7 +54,7 @@ export function GroupRow({
           pending: counts.pending,
         })}
       </p>
-      {hint && <p className="text-[12px] text-foreground/65">{hint}</p>}
+      {hint && <p className="text-[12px] text-foreground/70">{hint}</p>}
     </li>
   );
 }

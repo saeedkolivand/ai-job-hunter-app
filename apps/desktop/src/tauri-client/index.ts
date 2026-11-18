@@ -66,7 +66,7 @@ export function createTauriInvokeClient(): AppClient {
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
     emailWatch: emailWatch as AppClient['emailWatch'],
     sync: sync as AppClient['sync'],
-    insights: insights as AppClient['insights'],
+    insights,
     export: exportNs as AppClient['export'],
     scrape: scrape as AppClient['scrape'],
     match: match as AppClient['match'],

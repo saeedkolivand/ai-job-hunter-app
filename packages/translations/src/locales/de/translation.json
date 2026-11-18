@@ -2358,8 +2358,11 @@
     "subtitle": "Wie Ihre Bewerbungen bisher verlaufen sind.",
     "errorTitle": "Die Auswertung konnte nicht geladen werden",
     "errorDescription": "Beim Lesen Ihrer Bewerbungen ist etwas schiefgelaufen. Versuchen Sie es erneut.",
+    "updated": "Aktualisiert {{time}}",
+    "refresh": "Aktualisieren",
+    "stale": "Veraltet: Die letzte Aktualisierung ist fehlgeschlagen, daher zeigt diese Ansicht evtl. nicht Ihre neuesten Bewerbungen.",
     "empty": {
-      "title": "Noch keine Bewerbungen",
+      "title": "Keine Bewerbungsergebnisse anzuzeigen",
       "description": "Sobald Sie sich auf einige Stellen beworben haben, erscheinen hier die Muster in den Antworten."
     },
     "rate": "{{percent}} % positive Antworten",
@@ -2369,12 +2372,12 @@
       "rate": "{{percent}} % positive Antwortquote",
       "noRate": "Noch nicht genug entschiedene Bewerbungen für eine Quote",
       "counts": "{{positive}} von {{decided}} entschiedenen Bewerbungen erhielten eine positive Antwort. {{pending}} noch offen.",
-      "definition": "Eine positive Antwort bedeutet, dass die Bewerbung das Screening oder eine spätere Phase erreicht hat. Bewerbungen innerhalb der Wartefrist zählen als offen und fließen in keine Quote ein."
+      "definition": "Eine positive Antwort bedeutet, dass die Bewerbung das Screening oder eine spätere Phase erreicht hat. Bewerbungen, die noch im Status „Beworben“ innerhalb der Wartefrist liegen, zählen als offen und fließen in keine Quote ein."
     },
     "nudge": {
       "title": "{{applications}} Bewerbungen in den letzten {{hours}} Stunden",
-      "untailored": "{{untailored}} davon haben weder einen angepassten Lebenslauf noch ein angepasstes Anschreiben.",
-      "nearCopy": "{{nearCopy}} von {{letters}} Anschreiben sind einem anderen fast identisch.",
+      "untailored": "{{untailored}} davon wurde in der App keine Generierung erfasst.",
+      "nearCopy": "{{nearCopy}} der {{letters}} verglichenen neuesten Anschreiben sind einem anderen fast identisch.",
       "advice": "Jede Bewerbung auf die jeweilige Stelle zuzuschneiden lohnt sich meist. Das ist nur ein Hinweis, nichts wird blockiert."
     },
     "dimension": {
@@ -2390,7 +2393,7 @@
       "noGeneration": "Keine Generierung",
       "noGenerationHint": "Bewerbungen ohne generierten Lebenslauf oder generiertes Anschreiben.",
       "templateNotRecorded": "Vorlage nicht erfasst",
-      "templateNotRecordedHint": "Exportiert, bevor Vorlagen erfasst wurden, oder nicht aus einer Generierung exportiert.",
+      "templateNotRecordedHint": "Für diese Bewerbungen ist keine erkannte Export-Vorlage erfasst.",
       "tailored": {
         "tailored": "Angepasst",
         "untailored": "Nicht angepasst"

@@ -177,3 +177,13 @@ export const keys = {
     runsForJob: (jobUrl: string) => ['pipeline', 'runsForJob', jobUrl] as const,
   },
 } as const;
+
+/**
+ * Refresh every read derived from the applications table: the applications
+ * queries plus the Insights report, which the backend recomputes from them.
+ * Use this wherever an application is created, changed or removed.
+ */
+export const invalidateApplications = (qc: QueryClient) => {
+  void qc.invalidateQueries({ queryKey: keys.applications.all });
+  void qc.invalidateQueries({ queryKey: keys.insights.outcomes });
+};

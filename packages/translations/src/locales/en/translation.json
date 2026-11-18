@@ -2354,8 +2354,11 @@
     "subtitle": "How your applications have turned out so far.",
     "errorTitle": "Insights could not be loaded",
     "errorDescription": "Something went wrong while reading your applications. Try again.",
+    "updated": "Updated {{time}}",
+    "refresh": "Refresh",
+    "stale": "Out of date: the last refresh failed, so this may not show your latest applications.",
     "empty": {
-      "title": "No applications yet",
+      "title": "No application outcomes to show",
       "description": "Once you have applied to a few jobs, the patterns in your replies show up here."
     },
     "rate": "{{percent}}% positive replies",
@@ -2365,12 +2368,12 @@
       "rate": "{{percent}}% positive reply rate",
       "noRate": "Not enough decided applications for a rate yet",
       "counts": "{{positive}} of {{decided}} decided applications got a positive reply. {{pending}} still pending.",
-      "definition": "A positive reply means the application reached screening or later. Applications still inside the waiting window count as pending and are left out of every rate."
+      "definition": "A positive reply means the application reached screening or later. Applications still at applied inside the waiting window count as pending and are left out of every rate."
     },
     "nudge": {
       "title": "{{applications}} applications in the last {{hours}} hours",
-      "untailored": "{{untailored}} of them have no tailored résumé or letter.",
-      "nearCopy": "{{nearCopy}} of {{letters}} cover letters are near-identical to another one.",
+      "untailored": "{{untailored}} of them have no generation recorded in the app.",
+      "nearCopy": "{{nearCopy}} of the {{letters}} newest cover letters compared are near-identical to another one.",
       "advice": "Tailoring each application to its posting tends to be worth the extra minutes. This is only a heads-up, nothing is blocked."
     },
     "dimension": {
@@ -2386,7 +2389,7 @@
       "noGeneration": "No generation",
       "noGenerationHint": "Applications sent without a generated résumé or letter.",
       "templateNotRecorded": "Template not recorded",
-      "templateNotRecordedHint": "Exported before templates were tracked, or not exported from a generation.",
+      "templateNotRecordedHint": "No recognized export template is recorded for these applications.",
       "tailored": {
         "tailored": "Tailored",
         "untailored": "Not tailored"
