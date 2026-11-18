@@ -4,6 +4,7 @@ import { useTranslation } from '@ajh/translations';
 import { useNotification } from '@ajh/ui';
 
 import type { ExportFormat } from '@/components/generation/ExportPicker';
+import { useResumeExportPath } from '@/hooks/use-resume-export-path';
 import { errorClass } from '@/lib/error-class';
 import {
   buildFilename,
@@ -32,7 +33,7 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
   const [accent, setAccent] = useState<string | undefined>(undefined);
   const [exporting, setExporting] = useState<'resume' | 'cover' | null>(null);
   // Where the last PDF/DOCX résumé export was saved — feeds the "what an ATS sees" panel.
-  const [resumeExportPath, setResumeExportPath] = useState<string | null>(null);
+  const { path: resumeExportPath, track } = useResumeExportPath();
 
   const doExport = async (type: 'resume' | 'cover') => {
     const text = type === 'resume' ? resumeDraft : coverDraft;
@@ -54,14 +55,15 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
         ? resolveMarket({ targetLanguage: meta.targetLanguage })
         : undefined;
     setExporting(type);
-    // Only a new résumé export replaces the résumé's panel; a cover letter leaves it be.
-    if (type === 'resume') setResumeExportPath(null);
     try {
-      if (format === 'txt') {
-        exportTXT(text, filename.replace('.txt', ''));
-      } else {
+      // Résumés only feed the ATS panel (a newer résumé export supersedes an older one).
+      await track(type === 'resume', async () => {
+        if (format === 'txt') {
+          exportTXT(text, filename.replace('.txt', ''));
+          return;
+        }
         const exporter = format === 'pdf' ? exportPDF : exportDOCX;
-        const savedPath = await exporter(
+        return exporter(
           text,
           filename.replace(`.${format}`, ''),
           docType,
@@ -71,9 +73,7 @@ export function useGenerationExport({ meta, resumeDraft, coverDraft }: UseGenera
           coverLetterLocale,
           accent
         );
-        // Résumés only: a cover letter has no ATS view.
-        if (type === 'resume' && savedPath) setResumeExportPath(savedPath);
-      }
+      });
     } catch (err) {
       console.error('[export] failed', {
         format,
