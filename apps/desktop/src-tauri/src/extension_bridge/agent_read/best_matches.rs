@@ -12,7 +12,7 @@ use tauri::AppHandle;
 
 use crate::error::AppResult;
 
-use super::AgentTrust;
+use super::{AgentGhostSignals, AgentTrust};
 
 /// One contributing autopilot on a `best-matches` row — projected off
 /// `commands::autopilot::best_matches::BestMatchSource`'s wire shape. Its own
@@ -75,6 +75,8 @@ struct AgentBestMatch {
     is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     trust: Option<AgentTrust>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ghost_signals: Option<AgentGhostSignals>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     sources: Vec<AgentBestMatchSource>,
 }

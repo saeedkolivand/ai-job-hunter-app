@@ -177,7 +177,7 @@ mod job;
 mod reply;
 mod throttle;
 
-use job::AgentTrust;
+use job::{AgentGhostSignals, AgentTrust};
 pub(super) use reply::{
     extension_capped_reply, extension_gate_reply, origin_refused_reply, resource_name,
     throttled_reply, THROTTLED_MESSAGE,

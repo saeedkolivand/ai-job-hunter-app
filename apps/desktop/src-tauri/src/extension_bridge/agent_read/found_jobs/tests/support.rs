@@ -82,6 +82,7 @@ pub(super) fn richest_realistic_job(n: usize) -> FoundJob {
         is_agency: false,
         identity_review: None,
         identity_dismissed: None,
+        ghost_signals: None,
     }
 }
 

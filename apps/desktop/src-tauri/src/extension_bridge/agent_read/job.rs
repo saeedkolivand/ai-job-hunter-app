@@ -64,6 +64,20 @@ pub(in crate::extension_bridge::agent_read) struct AgentTrust {
     flags: Vec<crate::scraping::trust::TrustFlag>,
 }
 
+/// Projection of `posting_history::GhostSignals` (advisory ghost-job signals: counts and
+/// booleans, no free text) — nested inside `AgentJob` and `AgentBestMatch`. Re-declared for the
+/// same reason as [`AgentTrust`]: the allowlist must hold one level down. Same field names and
+/// shape as the wire type; the whole object is absent when the posting has no history.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::extension_bridge::agent_read) struct AgentGhostSignals {
+    first_seen_at: u64,
+    open_days: u32,
+    repost_count: u32,
+    open_long: bool,
+    reposted: bool,
+}
+
 /// `job` resource payload — projected off `autopilot::FoundJob`. Excludes
 /// `assistantNotes` (forbidden), `clusterId`/`clusterCanonical` (internal
 /// grouping detail with no meaning off this surface).
@@ -101,6 +115,8 @@ pub(in crate::extension_bridge::agent_read) struct AgentJob {
     is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     trust: Option<AgentTrust>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ghost_signals: Option<AgentGhostSignals>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     cluster_members: Vec<AgentClusterMember>,
 }

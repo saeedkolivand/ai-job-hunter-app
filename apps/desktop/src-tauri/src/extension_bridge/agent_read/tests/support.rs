@@ -75,6 +75,7 @@ pub(in crate::extension_bridge::agent_read) fn full_found_job() -> FoundJob {
         is_agency: false,
         identity_review: None,
         identity_dismissed: None,
+        ghost_signals: None,
     }
 }
 
