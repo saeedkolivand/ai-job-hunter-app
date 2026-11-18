@@ -83,7 +83,7 @@ describe('useHelpChat — retrieval', () => {
     // name it the way the sidebar does, or the user cannot find it.
     expect(appPages.map((section) => section.section)).toEqual(['Workspace', 'Automation', '']);
     expect(appPages[0]?.pages).toContain('Dashboard');
-    expect(appPages[1]?.pages).toEqual(['Autopilot', 'Best Matches', 'Monitoring']);
+    expect(appPages[1]?.pages).toEqual(['Autopilot', 'Best Matches', 'Monitoring', 'Insights']);
     // The pinned group ships no heading and no `nav.sections.*` key names it,
     // so it travels with an empty section name — its PAGES are the part the
     // answer needs, and Settings is where a great many of them end.

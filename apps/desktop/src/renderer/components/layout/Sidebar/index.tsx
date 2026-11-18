@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   Settings,
   Sparkles,
+  TrendingUp,
   User,
   Wand2,
   Zap,
@@ -48,6 +49,7 @@ const NAV_ICONS: Record<NavTourId, LucideIcon> = {
   autopilot: Zap,
   'best-matches': Sparkles,
   monitoring: Activity,
+  insights: TrendingUp,
   support: HelpCircle,
   settings: Settings,
 };

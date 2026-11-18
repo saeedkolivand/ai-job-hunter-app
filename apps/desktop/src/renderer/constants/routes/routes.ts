@@ -9,6 +9,7 @@ export const ROUTES = {
   RESUMES: '/documents',
   APPLICATIONS: '/applications',
   MONITORING: '/monitoring',
+  INSIGHTS: '/insights',
   SETTINGS: '/settings',
   SUPPORT: '/support',
 } as const;
