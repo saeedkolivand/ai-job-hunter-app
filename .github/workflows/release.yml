@@ -1850,6 +1850,21 @@ jobs:
           | 🧩 Browser extension | [Chrome (.zip)]($URL/ai-job-hunter-extension-chrome-${RAW}.zip) · [Firefox (.zip)]($URL/ai-job-hunter-extension-firefox-${RAW}.zip) |
 
           _The Microsoft Store build is signed, so it installs without the SmartScreen warning the direct .exe/.msi downloads trigger; it may lag this tag by a day or two while Store certification runs. Installed apps auto-update — no need to re-download for new versions. The browser extension installs from its .zip (load unpacked / store upload). The Snap Store build lands in the edge channel first and is promoted to stable by hand once it has been checked; the listing page shows the install command for whichever channel is live._
+
+          ### 🍎 macOS says it's "damaged"?
+
+          It's just unsigned. Run this once in Terminal:
+
+          ~~~sh
+          xattr -cr "/Applications/AI Job Hunter.app"
+          ~~~
+
+          Or install with Homebrew:
+
+          ~~~sh
+          brew tap saeedkolivand/ai-job-hunter-app https://github.com/saeedkolivand/ai-job-hunter-app
+          brew install --cask ai-job-hunter
+          ~~~
           <!-- downloads:end -->
           EOF
           )"
