@@ -156,6 +156,8 @@ const MONTHS: &[(&str, u8)] = &[
 ];
 
 const YEAR: &str = r"(?:19|20)\d{2}";
+/// Optional day prefix of a day-first date (`31.12.2022`), reduced to month + year.
+const DAY: &str = r"(?:(?:0?[1-9]|[12]\d|3[01])[./])?";
 const SEP: &str = r"(?:[-–—]|\bto\b|\bbis\b|\buntil\b|\btill\b)";
 
 /// A calendar point: a year and, when the source gave one, its month.
@@ -203,7 +205,7 @@ fn month_of(word: &str) -> Option<u8> {
 /// Every strictly parseable point shape, as an unanchored pattern.
 fn strict_point() -> String {
     format!(
-        r"(?:(?:{m})\.?\s+{y}|(?:0?[1-9]|1[0-2])[./]{y}|{y}[-/.](?:0[1-9]|1[0-2])|{y})",
+        r"(?:(?:{m})\.?\s+{y}|{DAY}(?:0?[1-9]|1[0-2])[./]{y}|{y}[-/.](?:0[1-9]|1[0-2])|{y})",
         m = month_alt(),
         y = YEAR
     )
@@ -213,7 +215,7 @@ fn strict_point() -> String {
 /// years, apostrophe years) — recognised only so they can be reported.
 fn loose_point() -> String {
     format!(
-        r"(?:{s}|(?:(?:{m})\.?\s*)?'\d{{2}}|(?:0?[1-9]|1[0-2])[./]\d{{2}})",
+        r"(?:{s}|(?:(?:{m})\.?\s*)?'\d{{2}}|(?:\d{{1,2}}[./])?\d{{1,2}}[./]\d{{2,4}})",
         s = strict_point(),
         m = month_alt()
     )
@@ -232,7 +234,7 @@ static RANGE_RE: LazyLock<Regex> = LazyLock::new(|| {
     let present = present_alt();
     let point = loose_point();
     Regex::new(&format!(
-        r"(?i)\b({point})\s*{SEP}\s*({point}|\d{{2}}\b|(?:{present})\b)"
+        r"(?i)(?:^|[^\d./])({point})\s*{SEP}\s*({point}|\d{{2}}\b|(?:{present})\b)"
     ))
     .unwrap()
 });
@@ -248,7 +250,7 @@ static OPEN_RE: LazyLock<Regex> = LazyLock::new(|| {
 
 static POINT_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(&format!(
-        r"(?i)^(?:(?P<mon>{m})\.?\s+(?P<y1>{y})|(?P<n>\d{{1,2}})[./](?P<y2>{y})|(?P<y3>{y})[-/.](?P<n3>\d{{2}})|(?P<y4>{y}))$",
+        r"(?i)^(?:(?P<mon>{m})\.?\s+(?P<y1>{y})|(?:\d{{1,2}}[./])?(?P<n>\d{{1,2}})[./](?P<y2>{y})|(?P<y3>{y})[-/.](?P<n3>\d{{2}})|(?P<y4>{y}))$",
         m = month_alt(),
         y = YEAR
     ))
@@ -296,9 +298,10 @@ fn parse_end(raw: &str) -> Option<End> {
 pub(super) fn find_range(line: &str) -> Option<Range2> {
     if let Some(c) = RANGE_RE.captures(line) {
         let whole = c.get(0)?;
+        let start = c.get(1)?.start();
         let (a, b) = (c.get(1)?.as_str(), c.get(2)?.as_str());
         return Some(Range2 {
-            span: whole.range(),
+            span: start..whole.end(),
             from_raw: a.to_string(),
             to_raw: b.to_string(),
             from: parse_point(a),

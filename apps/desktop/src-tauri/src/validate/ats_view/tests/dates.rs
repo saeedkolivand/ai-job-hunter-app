@@ -27,6 +27,24 @@ fn english_and_german_forms_parse() {
     assert_eq!(range("Since 2020"), pair("2020", "present"));
 }
 
+/// A point inside a day-first date is not its own date, and an invalid month is never
+/// silently re-read as a bare year.
+#[test]
+fn day_first_dates_are_one_token() {
+    assert_eq!(range("01.03.2021 – 31.12.2022"), pair("2021-03", "2022-12"));
+    assert_eq!(range("01/03/2021 - 05.12.2022"), pair("2021-03", "2022-12"));
+    let line = "Acme 01.03.2021 – 31.12.2022";
+    assert_eq!(
+        &line[find_range(line).unwrap().span],
+        "01.03.2021 – 31.12.2022"
+    );
+    assert_eq!(range("13/2021 - 14/2021"), (None, None));
+    assert_eq!(
+        range("45.13.2021 - 05.12.2022"),
+        (None, Some("2022-12".into()))
+    );
+}
+
 #[test]
 fn span_excludes_the_surrounding_text() {
     let line = "Acme Corp Mar 2021 - Present";
@@ -151,9 +169,8 @@ fn short_open_ended_role_lines_still_anchor() {
 #[test]
 fn an_impossible_month_is_unparseable_not_silently_ignored() {
     // Month 13/14 never parses as a month. The range still anchors (the role is not
-    // dropped): the start reads as the bare year `2021`, the end is unparseable.
-    let (from, to) = range("13/2021 - 14/2021");
-    assert_eq!((from.as_deref(), to), (Some("2021"), None));
+    // dropped) and BOTH sides are unparseable: never re-read as a bare year.
+    assert_eq!(range("13/2021 - 14/2021"), (None, None));
 }
 
 // ── the generator's other locales (es, fr, it, pt, nl) ───────────────────

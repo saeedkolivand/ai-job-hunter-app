@@ -6,5 +6,6 @@ mod dates;
 mod headings;
 mod names;
 mod path;
+mod roles_sep;
 mod specimens;
 mod support;

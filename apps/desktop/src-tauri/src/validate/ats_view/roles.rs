@@ -23,8 +23,13 @@ pub(super) fn is_bullet(c: char) -> bool {
     BULLETS.contains(&c)
 }
 
+/// The line up to a bullet glyph fused onto it. A mid-line `·` is a separator
+/// (`Title · Company · dates`), not a bullet: only a line-START `·` is one.
 fn before_bullet(line: &str) -> &str {
-    line.split(BULLETS).next().unwrap_or(line).trim()
+    line.split(|c| c != '·' && is_bullet(c))
+        .next()
+        .unwrap_or(line)
+        .trim()
 }
 
 fn starts_with_bullet(line: &str) -> bool {

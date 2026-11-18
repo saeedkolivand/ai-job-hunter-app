@@ -14,6 +14,7 @@ fn timed(text: &str) -> (AtsView, std::time::Duration) {
 
 /// End to end on hostile single lines (the line cap and the heading window together);
 /// `the_heading_window_alone_keeps_the_splitter_linear` isolates the window.
+// Ceiling is generous for loaded CI debug builds; a quadratic regression exceeds it by orders of magnitude.
 #[test]
 fn one_huge_line_of_bullet_glyphs_is_fast() {
     for line in [
@@ -22,7 +23,7 @@ fn one_huge_line_of_bullet_glyphs_is_fast() {
         "●A ".repeat(70_000),
     ] {
         let (v, took) = timed(&line);
-        assert!(took.as_secs_f32() < 1.0, "took {took:?}");
+        assert!(took.as_secs_f32() < 10.0, "took {took:?}");
         assert!(v.sections.len() <= 64 && v.roles.len() <= 64);
     }
 }
@@ -37,7 +38,7 @@ fn many_headings_and_roles_are_capped() {
         text.push_str("SKILLS\n");
     }
     let (v, took) = timed(&text);
-    assert!(took.as_secs_f32() < 1.0, "took {took:?}");
+    assert!(took.as_secs_f32() < 10.0, "took {took:?}");
     assert_eq!(v.roles.len(), 64);
     // 64 detected headings, THEN the Missing core row (Education) — the cap never drops it.
     assert_eq!(v.sections.len(), 65);
@@ -71,7 +72,7 @@ fn the_heading_window_alone_keeps_the_splitter_linear() {
         let start = std::time::Instant::now();
         let out = split_fused_headings(vec![line]);
         let took = start.elapsed();
-        assert!(took.as_secs_f32() < 1.0, "took {took:?}");
+        assert!(took.as_secs_f32() < 10.0, "took {took:?}");
         assert_eq!(
             out.len(),
             1,

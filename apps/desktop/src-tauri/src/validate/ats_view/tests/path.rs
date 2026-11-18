@@ -131,7 +131,7 @@ fn a_real_exported_pdf_and_docx_read_back_from_disk() {
 /// with a message containing `why`.
 fn refused_by(path: &str, why: &str) {
     assert!(
-        super::super::is_local_absolute(path),
+        super::super::file::is_local_absolute(path),
         "precondition: {path:?} must pass the absolute-path allowlist"
     );
     let msg = ats_view_for_file(path).expect_err(path).to_string();
@@ -175,7 +175,27 @@ fn a_symlink_with_a_pdf_name_to_a_non_pdf_is_refused_on_the_resolved_extension()
     if !made {
         return; // symlinks need a privilege this host does not grant
     }
-    refused_by(&slashed(&link), "only PDF and DOCX");
+    // Windows refuses any symlink in the path up front; Unix resolves it and judges the target.
+    let why = if cfg!(windows) {
+        "invalid path"
+    } else {
+        "only PDF and DOCX"
+    };
+    refused_by(&slashed(&link), why);
+}
+
+#[cfg(windows)]
+#[test]
+fn a_symlinked_directory_in_the_path_is_refused_before_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(real.join("cv.pdf"), b"%PDF-1.4").unwrap();
+    let link = dir.path().join("link");
+    if std::os::windows::fs::symlink_dir(&real, &link).is_err() {
+        return; // symlinks need a privilege this host does not grant
+    }
+    refused_by(&slashed(&link.join("cv.pdf")), "invalid path");
 }
 
 #[test]
