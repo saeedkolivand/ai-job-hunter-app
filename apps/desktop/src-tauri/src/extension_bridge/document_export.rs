@@ -35,7 +35,7 @@ use tauri::{AppHandle, Manager};
 use crate::export::types::{DocumentType, ExportRequest, GenerationMeta};
 
 use super::document_export_parse::{
-    cover_letter_market, non_empty, parse_request, resolve_generation, Source,
+    cover_letter_market, non_empty, parse_request, resolve_generation, ParsedRequest, Source,
 };
 use super::msg;
 
@@ -118,6 +118,9 @@ pub(super) async fn handle_document_export(
         }
     };
 
+    // The id of the generation read here: the export is recorded against THIS row, so one
+    // deleted during the render records nothing and a newer row for the same job is untouched.
+    let mut generation_id: Option<String> = None;
     let (text, meta) = match &parsed.source {
         Source::Generation(url) => {
             let Some(store) = app.try_state::<crate::ai_generations::AiGenerationStore>() else {
@@ -137,7 +140,10 @@ pub(super) async fn handle_document_export(
                 );
             };
             match resolve_generation(&record, parsed.document_type) {
-                Some(pair) => pair,
+                Some(pair) => {
+                    generation_id = Some(record.id.clone());
+                    pair
+                }
                 None => {
                     return error_reply(
                         req_id,
@@ -221,21 +227,48 @@ pub(super) async fn handle_document_export(
         }
     };
 
-    let reply = match bounded_reply(
+    let recorder_app = app.clone();
+    finish_export(
         req_id,
         &result,
+        &parsed,
+        generation_id.as_deref(),
+        move |id, template| {
+            // Sync SQLite behind a mutex: record on the blocking pool, fire-and-forget.
+            let (id, template) = (id.to_owned(), template.to_owned());
+            tauri::async_runtime::spawn_blocking(move || {
+                crate::export::commands::note_export_template(&recorder_app, &id, &template);
+            });
+        },
+    )
+}
+
+/// The post-render steps: bound the reply against the frame cap, then, only when it
+/// fits and the export belongs to a saved generation, hand that generation's id and the
+/// template's wire id to `record` (best-effort; a PDF/DOCX only). A refusal for size
+/// records nothing: the document never reached the caller.
+fn finish_export(
+    req_id: &str,
+    result: &crate::export::types::ExportResult,
+    parsed: &ParsedRequest,
+    generation_id: Option<&str>,
+    record: impl FnOnce(&str, &str),
+) -> String {
+    let reply = match bounded_reply(
+        req_id,
+        result,
         &parsed.kind_wire,
         &parsed.format_wire,
         &parsed.template_id_wire,
     ) {
         Bounded::Fits(reply) => reply,
-        // Refused for size: the document never reached the caller, so nothing is recorded.
         Bounded::TooLarge(refusal) => return refusal,
     };
-    // A generation export attached to a real application is the strongest template
-    // signal the outcome insights get; best-effort, never fails the reply.
-    if let Source::Generation(url) = &parsed.source {
-        crate::export::commands::note_export_template(app, url, parsed.template_id, parsed.format);
+    if let (Some(id), Some(template)) = (
+        generation_id,
+        crate::export::commands::recordable_template(parsed.template_id, parsed.format),
+    ) {
+        record(id, &template);
     }
     reply
 }

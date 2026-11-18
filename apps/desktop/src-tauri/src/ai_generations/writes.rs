@@ -22,7 +22,7 @@ impl AiGenerationStore {
 
     /// Overwrite an existing row's content by id (used by the per-job merge-upsert).
     /// Deliberately never writes `last_export_template`: that column belongs to
-    /// [`record_export_template`](Self::record_export_template), and a merge built from
+    /// [`record_export_template_by_id`](Self::record_export_template_by_id), and a merge built from
     /// an earlier read would write a stale template over a newer export's.
     pub(super) fn update(&self, rec: &AiGenerationRecord) -> AppResult<()> {
         let top_req_json = serde_json::to_string(&rec.top_requirements).unwrap_or_default();
@@ -118,20 +118,10 @@ impl AiGenerationStore {
         Ok(id)
     }
 
-    /// Record the template a job's generation was just exported with, matched
-    /// the way [`save_application`](Self::save_application) matches (normalized
-    /// url first, raw fallback). A job with no generation is a no-op (`Ok(false)`):
-    /// a base résumé export has nothing to annotate.
-    pub fn record_export_template(&self, job_url: &str, template: &str) -> AppResult<bool> {
-        match self.find_for_job(job_url) {
-            Some(found) => self.set_export_template(&found.id, template),
-            None => Ok(false),
-        }
-    }
-
-    /// The row write of [`record_export_template`](Self::record_export_template): `false`
-    /// when no row has `id` (the generation was deleted after it was looked up).
-    pub(super) fn set_export_template(&self, id: &str, template: &str) -> AppResult<bool> {
+    /// Record the template a generation was just exported with, selected by `id`:
+    /// `false` when no row has `id` (unknown, or deleted since the export began).
+    /// By id, never by job url, so it can only ever touch the row the export belongs to.
+    pub fn record_export_template_by_id(&self, id: &str, template: &str) -> AppResult<bool> {
         let conn = self.conn.lock();
         let changed = conn.execute(
             "UPDATE ai_generations SET last_export_template = ?2 WHERE id = ?1",

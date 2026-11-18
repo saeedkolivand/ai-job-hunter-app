@@ -33,7 +33,9 @@ fn recording_an_export_stores_the_template_on_the_jobs_generation() {
     insert(&store, "g1", JOB);
     insert(&store, "g2", "https://acme.com/job/2");
 
-    assert!(store.record_export_template(JOB, "swiss-minimal").unwrap());
+    assert!(store
+        .record_export_template_by_id("g1", "swiss-minimal")
+        .unwrap());
 
     let by_id = |id: &str| store.list().into_iter().find(|r| r.id == id).unwrap();
     assert_eq!(
@@ -46,7 +48,7 @@ fn recording_an_export_stores_the_template_on_the_jobs_generation() {
         "other jobs untouched"
     );
 
-    assert!(store.record_export_template(JOB, "classic").unwrap());
+    assert!(store.record_export_template_by_id("g1", "classic").unwrap());
     assert_eq!(
         by_id("g1").last_export_template.as_deref(),
         Some("classic"),
@@ -58,7 +60,7 @@ fn recording_an_export_stores_the_template_on_the_jobs_generation() {
 fn recording_an_export_for_a_job_without_a_generation_is_a_no_op() {
     let (_dir, store) = open_store();
     assert!(!store
-        .record_export_template("https://nowhere.example/job", "classic")
+        .record_export_template_by_id("gone", "classic")
         .unwrap());
     assert!(store.list().is_empty());
 }
@@ -67,7 +69,7 @@ fn recording_an_export_for_a_job_without_a_generation_is_a_no_op() {
 fn a_later_content_save_keeps_the_recorded_template() {
     let (_dir, store) = open_store();
     insert(&store, "g1", JOB);
-    store.record_export_template(JOB, "atelier").unwrap();
+    store.record_export_template_by_id("g1", "atelier").unwrap();
 
     // An answers-only save for the same job merges onto the row.
     store.save_application(content_less("g-new", JOB)).unwrap();
@@ -80,11 +82,11 @@ fn a_later_content_save_keeps_the_recorded_template() {
 fn a_content_save_built_from_a_stale_read_never_writes_the_old_template_back() {
     let (_dir, store) = open_store();
     insert(&store, "g1", JOB);
-    store.record_export_template(JOB, "classic").unwrap();
+    store.record_export_template_by_id("g1", "classic").unwrap();
     // The save reads (and merges onto) the row while it still says `classic` ...
     let stale = merge_application(store.find_for_job(JOB).unwrap(), content_less("g-new", JOB));
     // ... an export lands before the save's UPDATE runs.
-    store.record_export_template(JOB, "atelier").unwrap();
+    store.record_export_template_by_id("g1", "atelier").unwrap();
     store.update(&stale).unwrap();
 
     let rec = store.find_for_job(JOB).unwrap();
@@ -95,8 +97,10 @@ fn a_content_save_built_from_a_stale_read_never_writes_the_old_template_back() {
 fn recording_for_a_generation_deleted_in_the_meantime_reports_false() {
     let (_dir, store) = open_store();
     insert(&store, "g1", JOB);
-    assert!(store.set_export_template("g1", "atelier").unwrap());
-    assert!(!store.set_export_template("gone", "atelier").unwrap());
+    assert!(store.record_export_template_by_id("g1", "atelier").unwrap());
+    assert!(!store
+        .record_export_template_by_id("gone", "atelier")
+        .unwrap());
 }
 
 #[test]
@@ -125,7 +129,8 @@ fn export_import_round_trip_preserves_the_template_and_an_absent_one_stays_absen
     let (_src_dir, src) = open_store();
     insert(&src, "g1", JOB);
     insert(&src, "g2", "https://acme.com/job/2");
-    src.record_export_template(JOB, "swiss-minimal").unwrap();
+    src.record_export_template_by_id("g1", "swiss-minimal")
+        .unwrap();
 
     let exported = src.export();
     let rows = exported.as_array().unwrap();
@@ -166,7 +171,7 @@ fn a_sync_upsert_carries_the_template() {
     use crate::data_store::SyncSection;
     let (_src_dir, src) = open_store();
     insert(&src, "g1", JOB);
-    src.record_export_template(JOB, "atelier").unwrap();
+    src.record_export_template_by_id("g1", "atelier").unwrap();
     let payload = src.sync_records().unwrap().remove(0).payload;
 
     let (_dst_dir, dst) = open_store();

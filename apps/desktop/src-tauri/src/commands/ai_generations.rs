@@ -65,7 +65,7 @@ pub async fn ai_generations_save(app: AppHandle, req: AiGenerationSaveRequest) -
             req.quality_report.unwrap_or_default(),
             "ai_generations_save",
         ),
-        // Written only by an export (`record_export_template`), never by a content save.
+        // Written only by an export (`record_export_template_by_id`), never by a content save.
         last_export_template: None,
     };
 

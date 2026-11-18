@@ -114,7 +114,7 @@ pub struct AiGenerationRecord {
     #[serde(rename = "qualityReport", default)]
     pub quality_report: String,
     /// The template id the generation was last exported with (`NULL` until an
-    /// export; set by [`super::AiGenerationStore::record_export_template`], never
+    /// export; set by [`super::AiGenerationStore::record_export_template_by_id`], never
     /// by a content save). Read by the outcome insights' template grouping;
     /// `default` keeps a pre-migration bundle importable.
     #[serde(
