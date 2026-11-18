@@ -1,0 +1,15 @@
+Jana Mustermann
+jana.mustermann@example.com
+
+Sehr geehrte Damen und Herren,
+
+mit großem Interesse habe ich Ihre Anzeige für die Stelle als Senior Backend Engineer gelesen, denn Zahlungsverkehr und Container-Plattformen sind genau mein Arbeitsfeld. Bei Acme Payments habe ich einen Redis-Cache vor den Ledger-Dienst gesetzt. Die Wartezeit an der Kasse sank dadurch von 480ms auf 90ms.
+
+Außerdem habe ich den Wiederholungsplaner in Rust neu geschrieben, und fehlgeschlagene Abrechnungen gingen um 35% zurück. Das Kubernetes-Cluster, auf dem diese Dienste laufen, bedient 12000 Anfragen pro Sekunde. Docker und Kubernetes kenne ich also aus dem Betrieb und nicht nur aus der Theorie.
+
+Davor war ich bei Globex Logistics und habe dort die Abrechnungsschnittstelle in Python und PostgreSQL für 40 Lagerstandorte gebaut. Die Flotte habe ich zu AWS migriert und die Bereitstellung mit Terraform beschrieben. Das passt gut zu Ihrer Abrechnung, die ebenfalls auf AWS läuft.
+
+Über ein Gespräch, in dem ich Ihnen den Umbau des Wiederholungsplaners genauer erklären darf, freue ich mich sehr.
+
+Mit freundlichen Grüßen
+Jana Mustermann

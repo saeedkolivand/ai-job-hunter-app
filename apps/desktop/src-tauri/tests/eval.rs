@@ -52,13 +52,13 @@
 //! attached, where two dozen per-code assertions would each get loosened
 //! individually and quietly.
 //!
-//! **Read today's `0` for what it is.** Two of the five negatives
-//! (`*_generated_clean.txt`) are already pinned to a COMPLETELY empty report by
+//! **Read today's `0` for what it is.** The negatives named
+//! `*_generated_clean.txt` are already pinned to a COMPLETELY empty report by
 //! `clean_resume_produces_no_issues_at_all` and
 //! `clean_german_resume_produces_no_issues_at_all` (one test each — the German
 //! fixture is not covered by the English one), so their contribution to the
-//! false-positive count is zero by construction; the paraphrased pair and the
-//! grounded letter are the only ones free to move. The rate becomes an
+//! false-positive count is zero by construction; every other truthful fixture
+//! (the paraphrased and letter negatives) is free to move. The rate becomes an
 //! informative measurement as truthful fixtures are ADDED — that, not this
 //! run's number, is what gates the escalation decision.
 //!
@@ -260,6 +260,36 @@ const CASES: &[Case] = &[
     case!(
         "en_letter_grounded.txt",
         "en",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
+    case!(
+        "en_letter_truthful_bookend.txt",
+        "en",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
+    case!(
+        "en_letter_truthful_repeated_term.txt",
+        "en",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
+    case!(
+        "en_letter_truthful_plain.txt",
+        "en",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
+    case!(
+        "de_letter_truthful_a.txt",
+        "de",
+        DocKind::CoverLetter,
+        Label::Negative
+    ),
+    case!(
+        "de_letter_truthful_b.txt",
+        "de",
         DocKind::CoverLetter,
         Label::Negative
     ),

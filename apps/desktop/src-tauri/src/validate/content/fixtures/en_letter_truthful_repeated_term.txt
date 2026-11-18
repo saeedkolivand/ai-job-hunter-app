@@ -1,0 +1,15 @@
+Jane Doe
+jane.doe@example.com
+
+Dear Hiring Manager,
+
+Rust is the language I reach for when a payments bug has a price tag. At Acme Payments the retry scheduler for settlements was failing too often, so I rewrote it in Rust and failed settlements dropped by 35%.
+
+That experience is why your ad caught my eye. You want strong Rust alongside Python, and I have shipped both in production. My Rust is not limited to one scheduler, either. Ledger CLI, my own double-entry bookkeeping tool for freelancers, is written in Rust with SQLite and Clap, and I kept it small on purpose.
+
+Python came first for me. At Globex Logistics I built the billing API in Python and PostgreSQL for 40 warehouse sites, and I still think in Python when I sketch a data model.
+
+Your platform runs on Kubernetes, and mine does too: I ship Docker containers to a cluster that handles 12000 requests per second. I would like to bring Rust discipline to your checkout services. Thank you for reading, and I look forward to hearing from you.
+
+Best regards,
+Jane Doe
