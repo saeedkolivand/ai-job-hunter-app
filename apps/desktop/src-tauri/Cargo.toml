@@ -261,7 +261,7 @@ keyring-core = "1"
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 
 # Cross-platform dependencies
-rusqlite = { version = "0.41", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 pdf-extract = "0.12"
 zip = "9"
 docx-rs = "0.4.20"
