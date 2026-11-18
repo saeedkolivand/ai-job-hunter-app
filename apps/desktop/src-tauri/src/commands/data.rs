@@ -13,7 +13,7 @@ use crate::ai_generations::AiGenerationStore;
 use crate::applications::{ApplicationStatusEvents, ApplicationStore};
 use crate::autopilot::AutopilotStore;
 use crate::contact_profile::ContactProfileStore;
-use crate::data_store::DataStore;
+use crate::data_store::{omit_on_error, DataStore};
 use crate::db::now_ms;
 use crate::dedup::DedupStore;
 use crate::discovered::DiscoveredCompanyStore;
@@ -130,13 +130,8 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
         // A failed read omits the section rather than exporting an empty one,
         // so a restore of this bundle keeps the seeded events instead of
         // wiping the history.
-        let events = ApplicationStatusEvents(s.inner());
-        match events.try_export() {
-            Ok(section) => {
-                stores.insert(events.key().to_string(), section);
-            }
-            Err(e) => log::warn!("[data] status history left out of the backup: {}", e.code()),
-        }
+        let ev = ApplicationStatusEvents(s.inner());
+        omit_on_error(&mut stores, ev.key(), ev.try_export(), "status history");
     }
     if let Some(s) = app.try_state::<JobPreferencesStore>() {
         stores.insert(s.key().to_string(), s.export());
@@ -181,8 +176,9 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
     }
     // First/last-seen observations behind the ghost-job signals. Not rebuildable
     // from a re-scrape, so it is backed up; holds no secrets (keys + urls).
+    // A failed read omits the section so a restore keeps the existing history.
     if let Some(s) = app.try_state::<PostingHistoryStore>() {
-        stores.insert(s.key().to_string(), s.export());
+        omit_on_error(&mut stores, s.key(), s.try_export(), "posting history");
     }
 
     json!({

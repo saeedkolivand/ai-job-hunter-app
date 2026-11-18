@@ -16,6 +16,10 @@ use crate::scraping::{BoardScrapeSummary, BoardSearchInput, JobPosting, ScraperE
 
 pub(crate) mod linkedin_enrich;
 
+/// The "don't cap me" item cap an autopilot scrape runs with (see `amount`
+/// below); a board returning this many was cut off, not exhausted.
+pub(crate) const AUTOPILOT_ITEM_CAP: u32 = 100;
+
 /// Scrape job postings from one or more boards for an autopilot run. Returns the
 /// postings **and** the per-board diagnostics, so the run can explain a zero
 /// result (e.g. an aggregator error or a skipped board) instead of silently
@@ -38,7 +42,7 @@ pub async fn autopilot_scrape(
         // intent out of this sentinel would multiply an hourly autopilot's Adzuna
         // calls (24 → 48/day) and triple every JSearch fallback's bill, for a
         // target the user never expressed.
-        amount: 100,
+        amount: AUTOPILOT_ITEM_CAP,
         pages: target.pages,
         provider_amount: None,
         date_filter: target.date_filter.clone(),

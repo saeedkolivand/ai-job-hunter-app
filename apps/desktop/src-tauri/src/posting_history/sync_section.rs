@@ -19,12 +19,15 @@ impl SyncSection for PostingHistoryStore {
     }
 
     fn sync_records(&self) -> AppResult<Vec<SyncRecord>> {
-        array_records(self.export(), |row| str_field(row, "ghostKey"))
+        array_records(self.try_export()?, |row| str_field(row, "ghostKey"))
     }
 
     fn upsert_record(&self, id: &str, payload: &Value) -> AppResult<()> {
         let row = HistoryRow {
             ghost_key: id.to_string(),
+            // A peer's source says nothing about THIS device's markers; empty
+            // never counts as a repost, the next local sighting sets it.
+            last_source: String::new(),
             ..parse_record(payload)?
         };
         insert_conn(&self.conn.lock(), &row)

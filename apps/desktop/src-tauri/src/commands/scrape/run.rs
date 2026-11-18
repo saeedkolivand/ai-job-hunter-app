@@ -252,6 +252,7 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
         }
 
         let search_key = crate::commands::ghost::input_key(&input);
+        let item_cap = input.amount as usize;
         let result = engine
             .scrape_boards(
                 &boards,
@@ -281,6 +282,7 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                         &crate::commands::ghost::seen_of(postings),
                         &search_key,
                         summaries,
+                        item_cap,
                     );
                 }
                 // Passively harvest ATS company slugs from every posting's URL.

@@ -14,6 +14,34 @@ pub(super) fn clamp(s: &str) -> String {
     s[..end].to_string()
 }
 
+/// Hex chars of the SHA-256 kept in a shortened identity key.
+const DIGEST_HEX: usize = 16;
+
+/// [`clamp`] for an IDENTITY key (ghost key, source id): a plain cut would merge
+/// two long values sharing a prefix, so an over-cap value becomes a bounded
+/// prefix + a digest of the FULL value. Values within the cap, and an already
+/// shortened key, come back unchanged.
+pub(super) fn clamp_id(s: &str) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+
+    if s.len() <= MAX_BYTES {
+        return s.to_string();
+    }
+    let digest = Sha256::digest(s.as_bytes())
+        .iter()
+        .take(DIGEST_HEX / 2)
+        .fold(String::with_capacity(DIGEST_HEX), |mut acc, b| {
+            let _ = write!(acc, "{b:02x}");
+            acc
+        });
+    let mut end = MAX_BYTES - DIGEST_HEX - 1;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}#{digest}", &s[..end])
+}
+
 /// Normalized company + title, so a repost under a NEW url (or on another
 /// board, or with a `(m/w/d)` suffix) still matches. Deliberately not
 /// `canonical_job_key`, which is url-first and would treat every repost as a
@@ -25,7 +53,7 @@ pub fn ghost_key(company: &str, title: &str) -> Option<String> {
     if company.is_empty() || title.is_empty() {
         return None;
     }
-    Some(clamp(&format!("{company}|{title}")))
+    Some(clamp_id(&format!("{company}|{title}")))
 }
 
 /// Identity of one scraping source: a board plus the normalized search it ran
@@ -34,7 +62,7 @@ pub fn ghost_key(company: &str, title: &str) -> Option<String> {
 /// about the wider one.
 pub fn source_id(board: &str, search_key: &str) -> String {
     let search = search_key.split_whitespace().collect::<Vec<_>>().join(" ");
-    clamp(&format!(
+    clamp_id(&format!(
         "{}|{}",
         board.trim().to_lowercase(),
         search.to_lowercase()

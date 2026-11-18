@@ -321,6 +321,7 @@ pub(super) async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value
         &history_seen,
         &crate::commands::ghost::target_key(&target),
         &summaries,
+        crate::autopilot_helpers::AUTOPILOT_ITEM_CAP as usize,
     );
     for job in &mut found_jobs {
         job.ghost_signals = crate::posting_history::ghost_key(&job.company, &job.title)

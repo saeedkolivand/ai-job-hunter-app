@@ -47,7 +47,7 @@ fn only_boards_that_ran_to_completion_advance_their_marker() {
         // An empty successful board is evidence of absence, so it stays ok.
         summary("empty", None, None, None),
     ];
-    assert_eq!(ok_boards(&all).collect::<Vec<_>>(), ["ok", "empty"]);
+    assert_eq!(ok_boards(&all, 10).collect::<Vec<_>>(), ["ok", "empty"]);
 }
 
 #[test]
@@ -94,4 +94,47 @@ fn a_stopped_manual_scrape_is_never_recorded() {
         "record_scrape must be guarded by the cancel check"
     );
     assert_eq!(src.matches("ghost::record_scrape(").count(), 1);
+}
+
+#[test]
+fn a_board_stopped_at_the_item_cap_does_not_advance_its_marker() {
+    let mut capped = summary("capped", None, None, None);
+    capped.count = 10;
+    let mut under = summary("under", None, None, None);
+    under.count = 9;
+    let all = [capped, under];
+    assert_eq!(ok_boards(&all, 10).collect::<Vec<_>>(), ["under"]);
+}
+
+#[test]
+fn manual_search_keys_separate_structured_geography_and_sort() {
+    let mut input = BoardSearchInput {
+        query: "rust".into(),
+        location: Some("Berlin".into()),
+        amount: 25,
+        pages: 2,
+        provider_amount: None,
+        date_filter: None,
+        job_type: None,
+        work_types: None,
+        experience_level: None,
+        easy_apply: None,
+        actively_hiring: None,
+        verified: None,
+        sort_by: None,
+        country_code: None,
+        latitude: Some(52.5),
+        longitude: Some(13.4),
+        radius_km: Some(25),
+        companies: Vec::new(),
+    };
+    let base = input_key(&input);
+    input.radius_km = Some(100);
+    assert_ne!(base, input_key(&input));
+    input.radius_km = Some(25);
+    input.latitude = Some(48.1);
+    assert_ne!(base, input_key(&input));
+    input.latitude = Some(52.5);
+    input.sort_by = Some("DD".into());
+    assert_ne!(base, input_key(&input));
 }

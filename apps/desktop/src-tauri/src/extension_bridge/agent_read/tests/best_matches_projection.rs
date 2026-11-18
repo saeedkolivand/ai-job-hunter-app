@@ -52,6 +52,7 @@ fn best_match_ghost_signals_absent_when_unknown() {
     let mut row = full_best_match_row_json();
     row.as_object_mut().unwrap().remove("ghostSignals");
     let out = best_matches::resolve_best_matches(&[row], 0, 20, None);
+    assert_eq!(out["matches"].as_array().unwrap().len(), 1);
     assert!(out["matches"][0].get("ghostSignals").is_none());
 }
 

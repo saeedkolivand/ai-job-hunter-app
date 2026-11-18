@@ -2627,7 +2627,7 @@
       "openLong": "Seit {{days}} Tagen offen",
       "openLongDetail": "Diese Anzeige ist seit {{days}} Tagen online.",
       "reposted": "{{times}}× neu veröffentlicht",
-      "repostedDetail": "Diese Anzeige war von den Jobbörsen verschwunden und kam wieder, bisher {{times}}×.",
+      "repostedDetail": "Diese Anzeige ist aus einer beobachteten Suche verschwunden und später wieder aufgetaucht, bisher {{times}}×.",
       "hint": "Das ist nur ein Hinweis, kein Urteil: Arbeitgeber lassen Stellen aus vielen Gründen lange offen oder schreiben sie neu aus."
     },
     "filters": {

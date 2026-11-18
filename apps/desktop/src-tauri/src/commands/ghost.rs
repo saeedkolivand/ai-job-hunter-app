@@ -39,10 +39,12 @@ pub(crate) fn seen_of(postings: &[JobPosting]) -> Vec<SeenPosting> {
 /// The search a manual scrape ran: everything that narrows or widens its results.
 pub(crate) fn input_key(i: &BoardSearchInput) -> String {
     format!(
-        "{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
+        "{}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}|{:?}",
         i.query,
         i.location,
         i.country_code,
+        (i.latitude, i.longitude, i.radius_km),
+        i.sort_by,
         i.date_filter,
         i.job_type,
         i.work_types,
@@ -67,12 +69,15 @@ pub(crate) fn target_key(t: &AutopilotTarget) -> String {
     )
 }
 
-/// Boards that ran to completion: no error, no skip, no partial harvest. An
+/// Boards that ran to completion: no error, no skip, no partial harvest, and
+/// not stopped at the item `cap` (its unreturned postings are not absent). An
 /// empty successful board counts: it is evidence of absence.
-fn ok_boards(summaries: &[BoardScrapeSummary]) -> impl Iterator<Item = &str> {
+fn ok_boards(summaries: &[BoardScrapeSummary], cap: usize) -> impl Iterator<Item = &str> {
     summaries
         .iter()
-        .filter(|s| s.error.is_none() && s.skipped.is_none() && s.truncated.is_none())
+        .filter(move |s| {
+            s.error.is_none() && s.skipped.is_none() && s.truncated.is_none() && s.count < cap
+        })
         .map(|s| s.board.as_str())
 }
 
@@ -84,8 +89,9 @@ pub(crate) fn record_scrape(
     seen: &[SeenPosting],
     search_key: &str,
     summaries: &[BoardScrapeSummary],
+    item_cap: usize,
 ) -> HashMap<String, GhostSignals> {
-    let ok: Vec<String> = ok_boards(summaries)
+    let ok: Vec<String> = ok_boards(summaries, item_cap)
         .map(|b| source_id(b, search_key))
         .collect();
     let sources: Vec<String> = seen

@@ -36,11 +36,15 @@ fn import_replaces_and_a_malformed_row_aborts_without_clearing() {
     see(&store, T0);
     let bad = serde_json::json!([{"ghostKey": "x", "firstSeenAt": "nope"}]);
     assert!(store.import(&bad).is_err());
-    assert_eq!(store.rows().len(), 1, "failed import left the table alone");
+    assert_eq!(
+        store.rows().unwrap().len(),
+        1,
+        "failed import left the table alone"
+    );
     assert_eq!(marker_count(&store), 1, "and left the markers alone");
     assert!(store.import(&serde_json::json!({})).is_err());
     assert_eq!(store.import(&serde_json::json!([])).unwrap(), 0);
-    assert!(store.rows().is_empty());
+    assert!(store.rows().unwrap().is_empty());
 }
 
 #[test]
@@ -52,9 +56,12 @@ fn sync_record_round_trip_keys_on_the_ghost_key() {
     let (_dir2, b) = open();
     b.upsert_record(&records[0].id, &records[0].payload)
         .unwrap();
-    assert_eq!(b.export(), a.export());
+    // The peer's source is dropped (see `upsert_record`); all else survives.
+    let mut expected = a.rows().unwrap();
+    expected[0].last_source.clear();
+    assert_eq!(b.export(), serde_json::json!(expected));
     b.delete_record(&records[0].id).unwrap();
-    assert!(b.rows().is_empty());
+    assert!(b.rows().unwrap().is_empty());
 }
 
 fn hostile_row() -> serde_json::Value {
@@ -65,7 +72,7 @@ fn hostile_row() -> serde_json::Value {
 }
 
 fn assert_clamped(store: &PostingHistoryStore) {
-    let row = store.rows().into_iter().next().unwrap();
+    let row = store.rows().unwrap().into_iter().next().unwrap();
     assert!(
         row.last_seen_at <= now_ms(),
         "future last_seen_at bent to now"
@@ -87,7 +94,7 @@ fn a_hostile_backup_row_is_clamped_and_a_following_scrape_does_not_overflow() {
         out["evil|role"].repost_count,
         u32::try_from(MAX_COUNT).unwrap()
     );
-    assert_eq!(store.rows()[0].seen_count, MAX_COUNT + 1);
+    assert_eq!(store.rows().unwrap()[0].seen_count, MAX_COUNT + 1);
 }
 
 #[test]
@@ -120,4 +127,51 @@ fn saturating_counters_survive_a_row_at_i64_max() {
         acme_row(&store).repost_count,
         u64::try_from(i64::MAX).unwrap()
     );
+}
+
+#[test]
+fn a_synced_row_carries_no_source_so_the_next_sighting_is_not_a_false_repost() {
+    let (_dir, store) = open();
+    see(&store, T0);
+    without_acme(&store, T0 + 9 * DAY, A); // marker for A: day 9
+    let mut peer = serde_json::to_value(acme_row(&store)).unwrap();
+    peer["lastSeenAt"] = T0.into(); // the peer saw it on day 0 only
+    store.upsert_record("acme|rust engineer", &peer).unwrap();
+    assert_eq!(acme_row(&store).last_source, "");
+    assert_eq!(see(&store, T0 + 10 * DAY).repost_count, 0);
+    assert_eq!(
+        acme_row(&store).last_source,
+        A,
+        "the sighting sets it again"
+    );
+}
+
+#[test]
+fn a_failed_read_fails_the_export_instead_of_yielding_an_empty_snapshot() {
+    let (_dir, store) = open();
+    see(&store, T0);
+    store
+        .conn
+        .lock()
+        .execute_batch("DROP TABLE posting_history")
+        .unwrap();
+    assert!(store.try_export().is_err());
+    assert!(store.sync_records().is_err());
+    assert!(
+        store.export().is_null(),
+        "import's shape pre-pass rejects null"
+    );
+}
+
+#[test]
+fn a_reset_that_fails_midway_rolls_back_both_deletes() {
+    let (_dir, store) = open();
+    see(&store, T0);
+    store
+        .conn
+        .lock()
+        .execute_batch("DROP TABLE posting_history_meta")
+        .unwrap();
+    assert!(store.try_clear_all().is_err());
+    assert_eq!(store.rows().unwrap().len(), 1, "history delete rolled back");
 }

@@ -57,6 +57,7 @@ fn without_acme(store: &PostingHistoryStore, at: u64, src: &str) {
 fn acme_row(store: &PostingHistoryStore) -> HistoryRow {
     store
         .rows()
+        .unwrap()
         .into_iter()
         .find(|r| r.ghost_key.starts_with("acme|"))
         .unwrap()
@@ -79,12 +80,27 @@ fn ghost_key_is_none_when_either_half_is_empty() {
 }
 
 #[test]
-fn ghost_key_is_cut_at_the_byte_cap_without_splitting_a_char() {
+fn a_long_key_is_bounded_on_a_char_boundary_and_a_short_one_is_unchanged() {
+    assert_eq!(
+        ghost_key("Acme", "Rust Engineer").unwrap(),
+        "acme|rust engineer"
+    );
     let key = ghost_key("Acme", &"日".repeat(500)).unwrap();
-    // "acme|" is 5 bytes, each 日 is 3: 131 of them fit under 400, a 132nd
-    // would straddle the cap and must be dropped whole.
-    assert_eq!(key.len(), 5 + 3 * 131);
-    assert!(key.ends_with('日'));
+    assert!(key.len() <= 400);
+    assert!(key.starts_with("acme|日"));
+    assert_eq!(key::clamp_id(&key), key, "an already short key is stable");
+}
+
+#[test]
+fn long_titles_sharing_a_prefix_keep_distinct_keys() {
+    let prefix = "senior ".repeat(80);
+    let a = ghost_key("Acme", &format!("{prefix}rust engineer")).unwrap();
+    let b = ghost_key("Acme", &format!("{prefix}go engineer")).unwrap();
+    assert!(a.len() <= 400 && b.len() <= 400);
+    assert_ne!(a, b);
+    let long_a = source_id("greenhouse", &format!("{prefix}berlin"));
+    let long_b = source_id("greenhouse", &format!("{prefix}munich"));
+    assert_ne!(long_a, long_b);
 }
 
 #[test]
@@ -128,14 +144,23 @@ fn keys_unseen_for_the_retention_window_are_pruned_at_ingest() {
         A,
         &[("Kept Labs", "Kept Role", "u")],
     );
-    assert_eq!(store.rows().len(), 2, "inside the window nothing is pruned");
+    assert_eq!(
+        store.rows().unwrap().len(),
+        2,
+        "inside the window nothing is pruned"
+    );
     run(
         &store,
         T0 + POSTING_HISTORY_RETENTION_DAYS * DAY + DAY,
         A,
         &[("New Labs", "New Role", "u")],
     );
-    let keys: Vec<_> = store.rows().into_iter().map(|r| r.ghost_key).collect();
+    let keys: Vec<_> = store
+        .rows()
+        .unwrap()
+        .into_iter()
+        .map(|r| r.ghost_key)
+        .collect();
     assert_eq!(keys, ["kept labs|kept role", "new labs|new role"]);
 }
 
@@ -144,7 +169,7 @@ fn a_posting_with_no_company_or_title_is_not_recorded() {
     let (_dir, store) = open();
     let out = run(&store, T0, A, &[("", "Role", "u"), ("Co", "", "u")]);
     assert!(out.is_empty());
-    assert!(store.rows().is_empty());
+    assert!(store.rows().unwrap().is_empty());
 }
 
 #[test]
@@ -155,7 +180,7 @@ fn migration_creates_the_tables_on_a_fresh_db_and_reopen_is_a_no_op() {
         see(&store, T0);
     }
     let store = PostingHistoryStore::open(dir.path()).unwrap();
-    assert_eq!(store.rows().len(), 1, "reopen keeps data");
+    assert_eq!(store.rows().unwrap().len(), 1, "reopen keeps data");
     assert_eq!(acme_row(&store).last_source, A);
     let v: i64 = store
         .conn
@@ -181,6 +206,6 @@ fn clear_all_wipes_history_and_markers() {
     see(&store, T0);
     assert_eq!(marker_count(&store), 1);
     store.clear_all();
-    assert!(store.rows().is_empty());
+    assert!(store.rows().unwrap().is_empty());
     assert_eq!(marker_count(&store), 0);
 }

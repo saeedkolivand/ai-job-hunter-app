@@ -15,8 +15,10 @@
 //! [`source_id`]): each key remembers the source that last saw it, and each
 //! source remembers when it last ingested successfully (device-local markers,
 //! never backed up or synced). Only a return from the SAME source, after that
-//! source ingested without the key, and after the gap, counts. A restore clears
-//! the markers, and a key with no recorded source (an old row) never counts.
+//! source ingested without the key, and after the gap, counts. A source cut off
+//! at its item cap is not "ingested without the key" (its marker does not
+//! advance). A restore clears the markers; a key with no recorded source (an old
+//! row, or one written by sync) never counts.
 //! ponytail: a posting that moves between sources (another board, an edited
 //! query) never counts as a repost; that costs recall, never precision.
 //!
@@ -42,6 +44,7 @@ use crate::error::{AppError, AppResult};
 mod key;
 mod sync_section;
 
+use key::clamp_id;
 pub use key::{ghost_key, source_id};
 
 const DAY_MS: u64 = 86_400_000;
@@ -177,7 +180,7 @@ impl PostingHistoryStore {
             if let Some(key) = ghost_key(company, title) {
                 batch
                     .entry(key)
-                    .or_insert_with(|| (key::clamp(url), key::clamp(source)));
+                    .or_insert_with(|| (key::clamp(url), clamp_id(source)));
             }
         }
         let mut guard = self.conn.lock();
@@ -238,7 +241,7 @@ impl PostingHistoryStore {
             out.insert(key, signals_for(first, reposts, seen_at));
         }
         for source in ok_sources {
-            let source = key::clamp(source);
+            let source = clamp_id(source);
             tx.execute(
                 "INSERT INTO posting_history_meta (source, last_ingest_at) VALUES (?1, ?2)
                  ON CONFLICT(source) DO UPDATE SET
@@ -250,39 +253,51 @@ impl PostingHistoryStore {
         Ok(out)
     }
 
-    /// Wipe all history and the ingest marker (factory reset).
+    /// Wipe all history and the ingest marker (factory reset), in one
+    /// transaction. `Resettable` has no error channel, so a failure is logged
+    /// by code only, like the other stores' resets.
     pub fn clear_all(&self) {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM posting_history", []).ok();
-        conn.execute("DELETE FROM posting_history_meta", []).ok();
+        if let Err(e) = self.try_clear_all() {
+            log::warn!("[posting_history] reset failed: {}", e.code());
+        }
     }
 
-    /// Snapshot all rows (deterministic order) for export.
-    fn rows(&self) -> Vec<HistoryRow> {
+    fn try_clear_all(&self) -> AppResult<()> {
+        let mut guard = self.conn.lock();
+        let tx = guard.transaction()?;
+        tx.execute("DELETE FROM posting_history", [])?;
+        tx.execute("DELETE FROM posting_history_meta", [])?;
+        Ok(tx.commit()?)
+    }
+
+    /// Snapshot all rows (deterministic order) for export. Fails the whole read
+    /// rather than skip a row: a partial snapshot would restore as a wipe.
+    fn rows(&self) -> AppResult<Vec<HistoryRow>> {
         let conn = self.conn.lock();
-        conn.prepare(
+        let mut stmt = conn.prepare(
             "SELECT ghost_key, first_seen_at, last_seen_at, seen_count, repost_count, last_url,
                     last_source
              FROM posting_history ORDER BY ghost_key",
-        )
-        .ok()
-        .and_then(|mut stmt| {
-            stmt.query_map([], |r| {
-                Ok(HistoryRow {
-                    ghost_key: r.get(0)?,
-                    first_seen_at: ts_from_db(r.get(1)?),
-                    last_seen_at: ts_from_db(r.get(2)?),
-                    // Plain counts, not timestamps: clamp a stray negative to 0.
-                    seen_count: u64::try_from(r.get::<_, i64>(3)?).unwrap_or(0),
-                    repost_count: u64::try_from(r.get::<_, i64>(4)?).unwrap_or(0),
-                    last_url: r.get(5)?,
-                    last_source: r.get(6)?,
-                })
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(HistoryRow {
+                ghost_key: r.get(0)?,
+                first_seen_at: ts_from_db(r.get(1)?),
+                last_seen_at: ts_from_db(r.get(2)?),
+                // Plain counts, not timestamps: clamp a stray negative to 0.
+                seen_count: u64::try_from(r.get::<_, i64>(3)?).unwrap_or(0),
+                repost_count: u64::try_from(r.get::<_, i64>(4)?).unwrap_or(0),
+                last_url: r.get(5)?,
+                last_source: r.get(6)?,
             })
-            .ok()
-            .map(|rows| rows.filter_map(Result::ok).collect())
-        })
-        .unwrap_or_default()
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    /// The export section, or an error when the read failed (so the backup can
+    /// omit the section instead of exporting an empty one).
+    pub fn try_export(&self) -> AppResult<serde_json::Value> {
+        Ok(serde_json::json!(self.rows()?))
     }
 }
 
@@ -302,13 +317,13 @@ fn insert_conn(conn: &Connection, row: &HistoryRow) -> AppResult<()> {
              last_source)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
-            key::clamp(&row.ghost_key),
+            clamp_id(&row.ghost_key),
             ts_to_db(first),
             ts_to_db(last),
             i64::try_from(row.seen_count.min(MAX_COUNT)).unwrap_or(i64::MAX),
             i64::try_from(row.repost_count.min(MAX_COUNT)).unwrap_or(i64::MAX),
             key::clamp(&row.last_url),
-            key::clamp(&row.last_source),
+            clamp_id(&row.last_source),
         ],
     )?;
     Ok(())
@@ -319,8 +334,14 @@ impl DataStore for PostingHistoryStore {
         "postingHistory"
     }
 
+    /// Prefer [`PostingHistoryStore::try_export`]: this trait method has no
+    /// error channel, so a failed read is logged and exported as `null`, which
+    /// `data_import`'s shape pre-pass rejects instead of wiping the history.
     fn export(&self) -> serde_json::Value {
-        serde_json::json!(self.rows())
+        self.try_export().unwrap_or_else(|e| {
+            log::warn!("[posting_history] export failed: {}", e.code());
+            serde_json::Value::Null
+        })
     }
 
     fn import(&self, data: &serde_json::Value) -> AppResult<usize> {

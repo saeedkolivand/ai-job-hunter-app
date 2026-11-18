@@ -144,7 +144,7 @@ fn one_key_under_many_urls_in_one_scrape_counts_once() {
     assert_eq!(out.len(), 1);
     // Seen again after a 30-day absence: ONE repost, however many urls.
     assert_eq!(out.into_values().next().unwrap().repost_count, 1);
-    let rows = store.rows();
+    let rows = store.rows().unwrap();
     let acme = acme_row(&store);
     assert_eq!(rows.len(), 2, "acme once + the unrelated key");
     assert_eq!(acme.seen_count, 2, "the scrape counts once");
