@@ -11,16 +11,16 @@ use super::{support::*, *};
 fn status_events_source_confirmed_migration_is_appended_not_inserted() {
     assert_eq!(
         migrations::MIGRATIONS.len(),
-        10,
+        11,
         "a new migration must be APPENDED — this pins the total count"
     );
     assert_eq!(
-        migrations::MIGRATIONS[9].name,
-        "add_status_events_source_confirmed"
+        migrations::MIGRATIONS[10].name,
+        "add_status_events_dismissed"
     );
     assert_eq!(
-        migrations::MIGRATIONS[8].name,
-        "add_backfill_state",
+        migrations::MIGRATIONS[9].name,
+        "add_status_events_source_confirmed",
         "the entry immediately before the new one must be unchanged — proves \
          nothing was inserted ahead of it"
     );
@@ -210,11 +210,12 @@ fn reject_status_event_reverts_status_and_appends_a_reversal_event_keeping_the_o
     );
 
     // Second-to-last event: the ORIGINAL email-derived transition, unedited
-    // (from/to/source unchanged) — only its `confirmed` flag moved.
+    // (from/to unchanged) — only marked reviewed and dismissed (never accepted).
     let original = &events_after[events_after.len() - 2];
     assert_eq!(original.from_status, "interviewing");
     assert_eq!(original.to_status, "rejected");
     assert_eq!(original.source, EVENT_SOURCE_EMAIL);
+    assert!(original.dismissed, "refused, never read as accepted");
     assert!(
         original.confirmed,
         "the original row must be marked reviewed, not deleted or hidden"
@@ -275,17 +276,19 @@ fn reject_status_event_does_not_clobber_a_status_the_user_changed_by_hand() {
         "a reject must NEVER clobber a status the user changed by hand"
     );
 
-    // The provisional row is dismissed (marked reviewed), not reverted.
+    // The provisional row is dismissed (marked reviewed), not reverted -- and it is
+    // marked as dismissed, never left looking like an accepted email write.
     let email_events: Vec<_> = store
         .events(&id)
         .into_iter()
-        .filter(|e| e.source == EVENT_SOURCE_EMAIL)
+        .filter(|e| e.source == EVENT_SOURCE_EMAIL && e.dismissed)
         .collect();
     assert_eq!(email_events.len(), 1);
     assert!(
         email_events[0].confirmed,
         "the dismissed provisional row must still be marked reviewed"
     );
+    assert!(email_events[0].dismissed, "refused, never read as accepted");
 }
 
 #[test]
@@ -367,5 +370,29 @@ fn was_transition_rejected_fails_closed_on_a_genuine_read_error() {
         store.was_transition_rejected(&id, ApplicationStatus::Interviewing),
         "a read error must fail CLOSED (true — treat as rejected), never \
          un-gate a target the user may have actually disputed"
+    );
+}
+
+#[test]
+fn list_with_events_pairs_each_application_with_its_history_and_flags_an_unreadable_one() {
+    let (_dir, store) = open_store();
+    let whole = track(&store, "C1", "T1");
+    let broken = track(&store, "C2", "T2");
+    // A row whose `at` is not an integer cannot be decoded.
+    store
+        .conn
+        .lock()
+        .execute(
+            "INSERT INTO status_events (application_id, to_status, at) VALUES (?1, 'applied', 'oops')",
+            rusqlite::params![broken],
+        )
+        .unwrap();
+
+    let rows = store.list_with_events().unwrap();
+    let history = |id: &str| rows.iter().find(|(a, _)| a.id == id).unwrap().1.clone();
+    assert_eq!(history(&whole).unwrap().len(), store.events(&whole).len());
+    assert!(
+        history(&broken).is_none(),
+        "a partly undecodable history must not read as a complete one"
     );
 }

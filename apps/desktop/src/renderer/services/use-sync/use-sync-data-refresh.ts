@@ -17,6 +17,7 @@ export const useSyncDataRefresh = () => {
     // or model-list queries just because sync wrote a record.
     const prefixes = [
       keys.applications.all,
+      keys.insights.outcomes,
       keys.documents.all,
       keys.aiGenerations.all,
       keys.contactProfile.all,

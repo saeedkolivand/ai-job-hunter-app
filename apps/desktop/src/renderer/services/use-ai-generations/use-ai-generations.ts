@@ -11,7 +11,7 @@ import type {
 
 import { useAppClient } from '@/providers/AppClientProvider';
 
-import { keys } from '../query-client';
+import { invalidateApplications, keys } from '../query-client';
 
 export const useAiGenerations = () => {
   const api = useAppClient();
@@ -34,7 +34,7 @@ export const useSaveAiGeneration = () => {
     // refetch on focus), so invalidate both sides of that one write.
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.aiGenerations.all });
-      void qc.invalidateQueries({ queryKey: keys.applications.all });
+      invalidateApplications(qc);
     },
   });
 };

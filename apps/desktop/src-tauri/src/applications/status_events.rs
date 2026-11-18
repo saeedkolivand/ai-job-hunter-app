@@ -31,7 +31,6 @@ pub(crate) const EVENT_SOURCE_EMAIL: &str = "email";
 /// rejected this exact transition" and never mistake an ordinary manual
 /// status change for one.
 pub(crate) const EVENT_SOURCE_EMAIL_REJECT: &str = "email_reject";
-
 /// One append-only status-history row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +80,13 @@ pub struct StatusEvent {
     /// claimed.
     #[serde(default = "default_event_confirmed")]
     pub confirmed: bool,
+    /// The user reviewed this email-derived event and REFUSED it (always also
+    /// `confirmed`, so it is no longer pending). Kept apart from an acceptance so a
+    /// refused claim never counts as a status the user vouched for. Not part of the
+    /// sync record key, so a dismissal updates the record in place. Internal: never
+    /// serialized to the renderer.
+    #[serde(default, skip_serializing)]
+    pub dismissed: bool,
 }
 
 fn default_event_source() -> String {
@@ -91,6 +97,30 @@ fn default_event_confirmed() -> bool {
     true
 }
 
+/// One `SELECT rowid, application_id, from_status, to_status, at, note, source, confirmed,
+/// dismissed` row.
+pub(super) fn row_to_event(row: &rusqlite::Row<'_>) -> rusqlite::Result<StatusEvent> {
+    Ok(StatusEvent {
+        event_id: row.get(0)?,
+        application_id: row.get(1)?,
+        from_status: row.get(2)?,
+        to_status: row.get(3)?,
+        at: ts_from_db(row.get::<_, i64>(4)?),
+        note: row.get(5)?,
+        source: row.get(6)?,
+        confirmed: row.get::<_, i64>(7)? != 0,
+        dismissed: row.get::<_, i64>(8)? != 0,
+    })
+}
+
+impl StatusEvent {
+    /// The row-level form of [`ApplicationStore::current_status_is_unconfirmed_email_write`]'s
+    /// test (applied to the LATEST row): an email-derived write nobody has reviewed.
+    pub(crate) fn is_unconfirmed_email_write(&self) -> bool {
+        self.source == EVENT_SOURCE_EMAIL && !self.confirmed
+    }
+}
+
 impl ApplicationStore {
     /// History for one Application, oldest-first. `rowid` is a tie-break
     /// ONLY (two events landing in the same millisecond still order
@@ -99,25 +129,14 @@ impl ApplicationStore {
     pub fn events(&self, id: &str) -> Vec<StatusEvent> {
         let conn = self.conn.lock();
         conn.prepare(
-            "SELECT rowid, application_id, from_status, to_status, at, note, source, confirmed
+            "SELECT rowid, application_id, from_status, to_status, at, note, source, confirmed, dismissed
              FROM status_events WHERE application_id = ?1 ORDER BY at ASC, rowid ASC",
         )
         .ok()
         .and_then(|mut stmt| {
-            stmt.query_map(params![id], |row| {
-                Ok(StatusEvent {
-                    event_id: row.get(0)?,
-                    application_id: row.get(1)?,
-                    from_status: row.get(2)?,
-                    to_status: row.get(3)?,
-                    at: ts_from_db(row.get::<_, i64>(4)?),
-                    note: row.get(5)?,
-                    source: row.get(6)?,
-                    confirmed: row.get::<_, i64>(7)? != 0,
-                })
-            })
-            .ok()
-            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            stmt.query_map(params![id], row_to_event)
+                .ok()
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
         })
         .unwrap_or_default()
     }
@@ -418,8 +437,10 @@ impl ApplicationStore {
         // bare `rowid` match — the two must never drift apart, or this
         // write could mark reviewed a row the SELECT never actually
         // verified was this application's pending email-derived one.
+        // Reviewed AND refused: `dismissed` keeps the row from being mistaken for an
+        // accepted one (`source` stays put, it is part of the sync record key).
         conn.execute(
-            "UPDATE status_events SET confirmed = 1
+            "UPDATE status_events SET confirmed = 1, dismissed = 1
              WHERE rowid = ?1 AND application_id = ?2 AND source = ?3 AND confirmed = 0",
             params![event_id, id, EVENT_SOURCE_EMAIL],
         )?;

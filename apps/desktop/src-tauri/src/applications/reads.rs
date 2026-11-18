@@ -6,8 +6,12 @@
 //! (`tests/architecture.rs` R8). Persistence still lives entirely inside
 //! [`super::ApplicationStore`], on the SAME connection.
 
+use std::collections::HashMap;
+
 use super::rows::{row_to_application, SELECT_COLS};
-use super::{decode_unreserved, Application, ApplicationStore};
+use super::status_events::row_to_event;
+use super::{decode_unreserved, Application, ApplicationStore, StatusEvent};
+use crate::error::AppResult;
 
 impl ApplicationStore {
     pub fn list(&self) -> Vec<Application> {
@@ -20,6 +24,47 @@ impl ApplicationStore {
                     .map(|rows| rows.filter_map(|r| r.ok()).collect())
             })
             .unwrap_or_default()
+    }
+
+    /// Every application with its status history (oldest first), read under ONE lock so
+    /// the two reads cannot straddle a write. Unlike [`Self::list`] a failed read is an
+    /// error, never an empty result. A history is `None` when any of its rows could not
+    /// be decoded: it is incomplete, and the caller must not treat it as the whole story.
+    pub fn list_with_events(&self) -> AppResult<Vec<(Application, Option<Vec<StatusEvent>>)>> {
+        let conn = self.conn.lock();
+        let apps = conn
+            .prepare(&format!("{SELECT_COLS} ORDER BY updated_at DESC"))?
+            .query_map([], row_to_application)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut histories: HashMap<String, Option<Vec<StatusEvent>>> = HashMap::new();
+        let mut stmt = conn.prepare(
+            "SELECT rowid, application_id, from_status, to_status, at, note, source, confirmed, dismissed
+             FROM status_events ORDER BY at ASC, rowid ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(1)?, row_to_event(row).ok()))
+        })?;
+        for row in rows {
+            let (application_id, event) = row?;
+            let slot = histories
+                .entry(application_id)
+                .or_insert_with(|| Some(Vec::new()));
+            match event {
+                Some(event) => {
+                    if let Some(history) = slot {
+                        history.push(event);
+                    }
+                }
+                None => *slot = None,
+            }
+        }
+        Ok(apps
+            .into_iter()
+            .map(|a| {
+                let history = histories.remove(&a.id).unwrap_or_else(|| Some(Vec::new()));
+                (a, history)
+            })
+            .collect())
     }
 
     pub fn get(&self, id: &str) -> Option<Application> {

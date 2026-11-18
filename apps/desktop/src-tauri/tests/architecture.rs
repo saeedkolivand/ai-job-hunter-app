@@ -118,6 +118,9 @@ const L2: &[&str] = &[
     "autopilot_scheduler",
     "autopilot_helpers",
     "recommend",
+    // Outcome insights + volume nudge: pure derived-on-read math over the
+    // `applications` / `ai_generations` rows (ADR-042); the L3 command hands it rows.
+    "insights",
     // Email-watch background poller (task #23, PR B) — mirrors the
     // `autopilot`/`autopilot_scheduler` split: the L1 `email_watch` store/
     // connector/parser/matcher/poller stay Tauri-free, and this is the one

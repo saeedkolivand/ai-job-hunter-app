@@ -62,9 +62,10 @@ pub(crate) use self::analysis::{normalize_language, split_sections, Analysis, Se
 pub(crate) use self::dashes::strip_long_dashes;
 pub(crate) use self::issues::{cap_issues, issue};
 use self::language::language_issues;
+// `jaccard` is shared with `crate::insights` (near-copy letters), same similarity family.
+pub(crate) use self::text::jaccard;
 use self::text::{
-    flattened_lower, has_real_contact_match, jaccard, looks_like_header_phone, sentences,
-    word_count,
+    flattened_lower, has_real_contact_match, looks_like_header_phone, sentences, word_count,
 };
 pub(crate) use self::voice::line_carries_phrase;
 // Only `tests` (a `super::*` glob import) reaches into these three directly.

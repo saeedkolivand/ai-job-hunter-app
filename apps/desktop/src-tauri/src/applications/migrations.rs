@@ -247,6 +247,17 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             )
         },
     },
+    Migration {
+        name: "add_status_events_dismissed",
+        up: |conn| {
+            // An email-derived event the user rejected is `confirmed` (reviewed) AND
+            // `dismissed` (refused), so it is never read as an accepted one. Additive,
+            // default 0: every existing row stays "not dismissed".
+            conn.execute_batch(
+                "ALTER TABLE status_events ADD COLUMN dismissed INTEGER NOT NULL DEFAULT 0;",
+            )
+        },
+    },
 ];
 
 /// `backfill_state.name` for [`ApplicationStore::backfill_from_generations`]'s

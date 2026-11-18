@@ -30,6 +30,7 @@ describe('IPC_CHANNELS', () => {
         'geocode',
         'github',
         'help',
+        'insights',
         'jobPreferences',
         'contactProfile',
         'jobs',

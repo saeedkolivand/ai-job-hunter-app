@@ -59,6 +59,7 @@ export const HEADED_SECTIONS = [
       { to: ROUTES.AUTOPILOT, labelKey: 'nav.autopilot', tourId: 'autopilot' },
       { to: ROUTES.BEST_MATCHES, labelKey: 'nav.bestMatches', tourId: 'best-matches' },
       { to: ROUTES.MONITORING, labelKey: 'nav.monitoring', tourId: 'monitoring' },
+      { to: ROUTES.INSIGHTS, labelKey: 'nav.insights', tourId: 'insights' },
     ],
   },
 ] as const satisfies readonly NavSection[];

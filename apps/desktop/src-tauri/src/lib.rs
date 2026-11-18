@@ -54,6 +54,7 @@ pub mod events;
 pub mod export;
 pub mod extension_bridge;
 pub mod extraction;
+pub mod insights;
 pub mod ipc_contracts;
 pub mod job_preferences;
 pub mod jobs;

@@ -29,6 +29,7 @@
     "jobs": "Jobs",
     "autopilot": "Autopilot",
     "bestMatches": "Beste Treffer",
+    "insights": "Auswertung",
     "documents": "Dokumente",
     "resumes": "Lebensläufe",
     "monitoring": "Überwachung",
@@ -2350,6 +2351,57 @@
       "never": "Nie",
       "lastRun": "Letzte Ausführung:",
       "found": "Gefunden"
+    }
+  },
+  "insights": {
+    "title": "Auswertung",
+    "subtitle": "Wie Ihre Bewerbungen bisher verlaufen sind.",
+    "errorTitle": "Die Auswertung konnte nicht geladen werden",
+    "errorDescription": "Beim Lesen Ihrer Bewerbungen ist etwas schiefgelaufen. Versuchen Sie es erneut.",
+    "updated": "Aktualisiert {{time}}",
+    "refresh": "Aktualisieren",
+    "stale": "Veraltet: Die letzte Aktualisierung ist fehlgeschlagen, daher zeigt diese Ansicht evtl. nicht Ihre neuesten Bewerbungen.",
+    "empty": {
+      "title": "Keine Bewerbungsergebnisse anzuzeigen",
+      "description": "Sobald Sie sich auf einige Stellen beworben haben, erscheinen hier die Muster in den Antworten."
+    },
+    "rate": "{{percent}} % positive Antworten",
+    "notEnoughData": "Noch nicht genug Daten",
+    "counts": "{{positive}} positiv · {{rejected}} abgelehnt · {{noReply}} keine Antwort · {{pending}} offen",
+    "headline": {
+      "rate": "{{percent}} % positive Antwortquote",
+      "noRate": "Noch nicht genug entschiedene Bewerbungen für eine Quote",
+      "counts": "{{positive}} von {{decided}} entschiedenen Bewerbungen erhielten eine positive Antwort. {{pending}} noch offen.",
+      "definition": "Eine positive Antwort bedeutet, dass die Bewerbung das Screening oder eine spätere Phase erreicht hat. Bewerbungen, die noch im Status „Beworben“ innerhalb der Wartefrist liegen, zählen als offen und fließen in keine Quote ein."
+    },
+    "nudge": {
+      "title": "{{applications}} Bewerbungen in den letzten {{hours}} Stunden",
+      "untailored": "{{untailored}} davon wurde in der App keine Generierung erfasst.",
+      "nearCopy": "{{nearCopy}} der {{letters}} verglichenen neuesten Anschreiben sind einem anderen fast identisch.",
+      "advice": "Jede Bewerbung auf die jeweilige Stelle zuzuschneiden lohnt sich meist. Das ist nur ein Hinweis, nichts wird blockiert."
+    },
+    "dimension": {
+      "board": "Nach Jobbörse",
+      "tailored": "Angepasst oder nicht",
+      "coverLetter": "Mit oder ohne Anschreiben",
+      "targetLanguage": "Nach Sprache",
+      "month": "Nach Monat",
+      "template": "Nach Lebenslauf-Vorlage"
+    },
+    "group": {
+      "unknown": "Unbekannt",
+      "languageNotRecorded": "Sprache nicht erfasst",
+      "languageNotRecordedHint": "Bewerbungen ohne Generierung oder mit einer Generierung ohne Zielsprache.",
+      "templateNotRecorded": "Vorlage nicht erfasst",
+      "templateNotRecordedHint": "Für diese Bewerbungen ist keine erkannte Export-Vorlage erfasst.",
+      "tailored": {
+        "tailored": "Angepasst",
+        "untailored": "Nicht angepasst"
+      },
+      "coverLetter": {
+        "included": "Mit Anschreiben",
+        "none": "Ohne Anschreiben"
+      }
     }
   },
   "atsView": {
