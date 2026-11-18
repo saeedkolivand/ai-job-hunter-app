@@ -32,6 +32,7 @@ fn the_audited_field_is_the_key_the_real_export_struct_serializes_its_bytes_unde
         mime_type: "application/pdf".to_string(),
         filename: "resume.pdf".to_string(),
         report: None,
+        ats_view: None,
     })
     .expect("ExportResult serializes");
 

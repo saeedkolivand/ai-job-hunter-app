@@ -20,6 +20,7 @@ fn round_3_destination_and_vacuous_proof_rows_stay_not_exposed() {
         "commands::ai::ai_test_provider_key",
         "commands::ai::ai_list_provider_models",
         "commands::resume::extract_resume",
+        "export::commands::export_ats_view",
         "commands::support::support_export_diagnostics",
     ] {
         let entry = POLICY

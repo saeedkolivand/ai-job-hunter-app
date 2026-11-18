@@ -18,7 +18,7 @@ use tracing::{instrument, warn};
 use crate::error::{AppError, AppResult};
 use types::{ExtractedResume, ExtractionError};
 
-const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
+pub(crate) const MAX_BYTES: usize = 10 * 1024 * 1024; // 10 MB
 
 /// Resume extraction entry point (text + structure). Pure logic with no Tauri
 /// coupling — the IPC command wrapper lives in the shell module `commands::resume`,

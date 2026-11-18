@@ -29,7 +29,9 @@ import { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DISCOVERY_CHANNELS, type DiscoveryContract } from './discovery.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+export * from './export.js';
 import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
+import { EXPORT_CHANNELS, type ExportContract } from './export.js';
 import { EXTENSION_BRIDGE_CHANNELS, type ExtensionBridgeContract } from './extensionBridge.js';
 import { GEOCODE_CHANNELS, type GeocodeContract } from './geocode.js';
 import { GITHUB_CHANNELS, type GitHubContract } from './github.js';
@@ -59,6 +61,7 @@ export interface IpcContract {
   jobs: JobsContract;
   ai: AiContract;
   documents: DocumentsContract;
+  export: ExportContract;
   jobPreferences: JobPreferencesContract;
   contactProfile: ContactProfileContract;
   github: GitHubContract;
@@ -97,6 +100,7 @@ export const IPC_CHANNELS = {
   jobs: JOBS_CHANNELS,
   ai: AI_CHANNELS,
   documents: DOCUMENTS_CHANNELS,
+  export: EXPORT_CHANNELS,
   jobPreferences: JOB_PREFERENCES_CHANNELS,
   contactProfile: CONTACT_PROFILE_CHANNELS,
   github: GITHUB_CHANNELS,

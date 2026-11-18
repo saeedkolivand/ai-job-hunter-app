@@ -9,6 +9,7 @@ use super::readback::{evaluate, expected_from_request, normalize, Expected};
 use super::*;
 use crate::export::types::{DocumentType, GenerationMeta, LetterLayout, TemplateId};
 
+mod autofix_view;
 mod band_links;
 mod profile_links;
 mod readback_checks;

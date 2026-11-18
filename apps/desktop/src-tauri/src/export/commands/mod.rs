@@ -109,6 +109,7 @@ async fn documents_export_document_inner(mut request: ExportRequest) -> AppResul
             mime_type: "text/plain".to_string(),
             filename,
             report: None,
+            ats_view: None,
         });
     }
 
@@ -121,7 +122,7 @@ async fn documents_export_document_inner(mut request: ExportRequest) -> AppResul
     // Clone the request before moving so `generate_filename` can still use it
     // on the async thread after the blocking work completes.
     let request_for_filename = request.clone();
-    let (data, mime_type, extension, report) =
+    let (data, mime_type, extension, mut report) =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<_> {
             match request.format {
                 ExportFormat::Docx => {
@@ -181,11 +182,15 @@ async fn documents_export_document_inner(mut request: ExportRequest) -> AppResul
     // Generate filename
     let filename = generate_filename(&request_for_filename, extension);
 
+    // The ATS view rides on the result, not inside the report.
+    let ats_view = report.as_mut().and_then(|r| r.ats_view.take());
+
     Ok(ExportResult {
         data,
         mime_type,
         filename,
         report,
+        ats_view,
     })
 }
 
@@ -242,6 +247,18 @@ fn blocking_reason(report: &ExportReport) -> String {
     } else {
         format!("Export blocked: {reasons}")
     }
+}
+
+/// Tauri command: the strict "what an ATS sees" reading of a previously
+/// exported PDF/DOCX file. Read-only and advisory. `path` is user-controlled and
+/// is validated in [`crate::validate::ats_view_for_file`] (no `..`, `.pdf`/`.docx`
+/// only, regular file, size-capped); the work runs on a blocking thread because
+/// it parses the whole file.
+#[command]
+pub async fn export_ats_view(path: String) -> AppResult<crate::validate::AtsView> {
+    tauri::async_runtime::spawn_blocking(move || crate::validate::ats_view_for_file(&path))
+        .await
+        .map_err(|e| AppError::Message(format!("ATS view task failed: {e}")))?
 }
 
 /// Tauri command to export and save document with file dialog

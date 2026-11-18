@@ -66,6 +66,7 @@ fn oversized_result(size: usize) -> crate::export::types::ExportResult {
         mime_type: "application/pdf".to_string(),
         filename: "resume.pdf".to_string(),
         report: None,
+        ats_view: None,
     }
 }
 

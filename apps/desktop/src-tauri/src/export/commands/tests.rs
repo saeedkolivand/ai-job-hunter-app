@@ -1,6 +1,7 @@
 use super::super::types::{DocumentType, ExportFormat, GenerationMeta, LetterLayout, TemplateId};
 use super::*;
 
+mod ats_view;
 mod filename;
 
 // ── Fixtures (mirrors typst_engine/tests/letter_fixtures.rs — minimal but complete) ────────────
