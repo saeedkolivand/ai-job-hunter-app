@@ -1,0 +1,15 @@
+Jane Doe
+jane.doe@example.com
+
+Dear Hiring Manager,
+
+Eight years of backend work on payment systems have taught me that the slow part is rarely where people first look. At Acme Payments it was the ledger service. A Redis cache in front of it took checkout from 480ms down to 90ms, and nothing else had to change.
+
+You ask for PostgreSQL and Redis at scale, and for Terraform and AWS. Across Acme Payments and Globex Logistics I used all four. I built the billing API on PostgreSQL, migrated the fleet to AWS, and wrote the Terraform that provisioned it, which spared the team from clicking through consoles.
+
+My degree is a BSc in Computer Science from TU Berlin, but most of what I know about running services came from owning them. Right now I deploy Docker containers onto Kubernetes, and the cluster handles 12000 requests per second.
+
+I would like to talk about how your billing pipeline is provisioned today. If the conversation goes well, I can start whenever you need me.
+
+Kind regards,
+Jane Doe

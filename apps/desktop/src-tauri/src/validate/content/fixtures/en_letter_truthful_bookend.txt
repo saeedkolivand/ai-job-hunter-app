@@ -1,0 +1,15 @@
+Jane Doe
+jane.doe@example.com
+
+Dear Hiring Manager,
+
+I am applying for the Senior Backend Engineer role on your payments team, because the work you describe is the work I already do. Your ad pairs a Python ledger with a Kubernetes platform, and that is close to my day at Acme Payments.
+
+There I put a Redis cache in front of our ledger service, and checkout latency fell from 480ms to 90ms. I also rewrote the retry scheduler in Rust, which cut failed settlements by 35%. The cluster those services run on serves 12000 requests per second, so I have learned what Docker and Kubernetes look like when they are busy.
+
+Earlier, at Globex Logistics, I built a billing API in Python and PostgreSQL for 40 warehouse sites. When the fleet outgrew manual setup, I moved it to AWS and wrote the deployment pipeline in Terraform. Outside work I maintain Ledger CLI, a small double-entry bookkeeping tool in Rust for freelancers.
+
+I would enjoy bringing that mix of ledger code and infrastructure to the Senior Backend Engineer position on your team. I am glad to talk through the settlement rewrite whenever suits you.
+
+Best regards,
+Jane Doe

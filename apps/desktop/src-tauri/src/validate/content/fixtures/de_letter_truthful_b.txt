@@ -1,0 +1,15 @@
+Jana Mustermann
+jana.mustermann@example.com
+
+Guten Tag,
+
+Ihre Stellenanzeige beschreibt eine Plattform, die mir vertraut vorkommt: Container, Kubernetes und ein Zahlungsbuch in Python. Seit acht Jahren arbeite ich im Zahlungsverkehr und baue Container-Plattformen auf.
+
+Bei Acme Payments betreibe ich Docker-Container auf einem Kubernetes-Cluster. Dort laufen Dienste, die 12000 Anfragen pro Sekunde beantworten müssen, und im Alltag lerne ich, wo ein Cluster unter Last wirklich nachgibt. Meine Stärke liegt darin, solche Engpässe zu finden. Einen davon, den Wiederholungsplaner, habe ich in Rust neu geschrieben und damit Fehlschläge bei Abrechnungen um 35% verringert.
+
+Bei Globex Logistics habe ich Python und PostgreSQL für eine Abrechnungsschnittstelle genutzt, die 40 Lagerstandorte bedient. Terraform half mir, die Migration zu AWS nachvollziehbar zu halten. Mein Studium der Informatik habe ich an der TU Berlin abgeschlossen.
+
+Gern erzähle ich Ihnen in einem Gespräch mehr darüber, wie ich Redis und PostgreSQL gesund halte.
+
+Viele Grüße
+Jana Mustermann
