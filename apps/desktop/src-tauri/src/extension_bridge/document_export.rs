@@ -221,13 +221,23 @@ pub(super) async fn handle_document_export(
         }
     };
 
-    success_or_capped_reply(
+    let reply = match bounded_reply(
         req_id,
         &result,
         &parsed.kind_wire,
         &parsed.format_wire,
         &parsed.template_id_wire,
-    )
+    ) {
+        Bounded::Fits(reply) => reply,
+        // Refused for size: the document never reached the caller, so nothing is recorded.
+        Bounded::TooLarge(refusal) => return refusal,
+    };
+    // A generation export attached to a real application is the strongest template
+    // signal the outcome insights get; best-effort, never fails the reply.
+    if let Source::Generation(url) = &parsed.source {
+        crate::export::commands::note_export_template(app, url, parsed.template_id, parsed.format);
+    }
+    reply
 }
 
 /// Build the success `document.result` reply from a real [`crate::export::types::ExportResult`],
@@ -235,6 +245,7 @@ pub(super) async fn handle_document_export(
 /// refusal if it somehow doesn't fit (issue #1135's pattern, applied here) — refuse-not-truncate,
 /// never a silently truncated document on the wire. Pure (no `AppHandle`/I/O) — directly
 /// unit-testable against a synthetic oversized `ExportResult` without a real Typst compile.
+#[cfg(test)]
 fn success_or_capped_reply(
     req_id: &str,
     result: &crate::export::types::ExportResult,
@@ -242,6 +253,32 @@ fn success_or_capped_reply(
     format_wire: &str,
     template_id_wire: &str,
 ) -> String {
+    bounded_reply(req_id, result, kind_wire, format_wire, template_id_wire).into_reply()
+}
+
+/// A built `document.result` reply, either as sent or replaced by the size refusal.
+enum Bounded {
+    Fits(String),
+    TooLarge(String),
+}
+
+impl Bounded {
+    #[cfg(test)]
+    fn into_reply(self) -> String {
+        match self {
+            Self::Fits(r) | Self::TooLarge(r) => r,
+        }
+    }
+}
+
+/// [`success_or_capped_reply`]'s body, keeping the two outcomes apart.
+fn bounded_reply(
+    req_id: &str,
+    result: &crate::export::types::ExportResult,
+    kind_wire: &str,
+    format_wire: &str,
+    template_id_wire: &str,
+) -> Bounded {
     let byte_length = result.data.len();
     let data_b64 = super::agent_call::reshape::encode_base64(&result.data);
     let reply = json!({
@@ -262,9 +299,9 @@ fn success_or_capped_reply(
     .to_string();
 
     if reply.len() <= super::MAX_FRAME_BYTES {
-        return reply;
+        return Bounded::Fits(reply);
     }
-    error_reply(
+    Bounded::TooLarge(error_reply(
         req_id,
         super::agent_call::ERR_RESULT_TOO_LARGE,
         &format!(
@@ -273,7 +310,7 @@ fn success_or_capped_reply(
             reply.len()
         ),
         None,
-    )
+    ))
 }
 
 #[cfg(test)]

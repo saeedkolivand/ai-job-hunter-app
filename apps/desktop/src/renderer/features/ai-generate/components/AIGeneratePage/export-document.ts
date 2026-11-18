@@ -33,7 +33,9 @@ export async function exportActiveDocument(
     letterLayoutId,
   }: ExportDocumentState,
   fmt: 'pdf' | 'docx' | 'txt',
-  track: TrackResumeExport
+  track: TrackResumeExport,
+  /** The generation's job url — the backend records the export template on it. */
+  jobUrl?: string
 ): Promise<void> {
   const text = activeOut === 'resume' ? resumeOut : coverOut;
   if (!text) return;
@@ -76,16 +78,21 @@ export async function exportActiveDocument(
       atsMode,
       exportLocale,
       accent,
-      letterLayoutId
+      letterLayoutId,
+      jobUrl
     );
   });
 }
 
 /** Export action for the AI Generate page plus the saved résumé path that feeds the ATS panel. */
-export function useActiveDocumentExport(state: ExportDocumentState, blocked: boolean) {
+export function useActiveDocumentExport(
+  state: ExportDocumentState,
+  blocked: boolean,
+  jobUrl?: string
+) {
   const { path, track } = useResumeExportPath();
   const doExport = async (fmt: 'pdf' | 'docx' | 'txt') => {
-    if (!blocked) await exportActiveDocument(state, fmt, track);
+    if (!blocked) await exportActiveDocument(state, fmt, track, jobUrl);
   };
   return { atsViewPath: path, doExport };
 }

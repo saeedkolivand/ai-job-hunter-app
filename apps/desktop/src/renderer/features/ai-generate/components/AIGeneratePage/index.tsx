@@ -202,7 +202,8 @@ export function AIGeneratePage() {
 
   const { atsViewPath, doExport } = useActiveDocumentExport(
     { activeOut, resumeOut, coverOut, meta, locale, templateId, atsMode, accent, letterLayoutId },
-    isGenerating
+    isGenerating,
+    jobUrl
   );
 
   // Abort only — `useGeneration`'s catch owns the aborted outcome (keeps any finished

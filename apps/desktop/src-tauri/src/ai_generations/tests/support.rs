@@ -53,6 +53,7 @@ pub(super) fn record(id: &str, job_url: &str) -> AiGenerationRecord {
         email_body: String::new(),
         application_id: None,
         quality_report: String::new(),
+        last_export_template: None,
     }
 }
 

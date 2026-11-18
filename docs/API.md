@@ -2340,10 +2340,15 @@ exportDocument(req: BaseExportRequest): Promise<{
 #### `documents.exportAndSave`
 
 ```ts
-exportAndSave(req: BaseExportRequest): Promise<string>;
+exportAndSave(req: BaseExportRequest, generationJobUrl?: string): Promise<string>;
 ```
 
 Render, ask the user where to save, and write the file; resolves to the saved path.
+`generationJobUrl` (optional) names the job whose AI generation is being exported:
+once the file is saved, that generation remembers the template used, which feeds
+the template grouping of `insights.outcomes`. Omit it for an export that belongs
+to no generation. Recording the template is best-effort bookkeeping: a successful
+save does not guarantee the template was recorded (no generation, a store error).
 
 #### `documents.renderPreviewImages`
 

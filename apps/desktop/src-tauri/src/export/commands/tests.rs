@@ -283,3 +283,17 @@ fn validate_and_normalize_leaves_a_resume_untouched_by_letter_completion() {
         "a résumé request must not gain a salutation/sign-off"
     );
 }
+
+#[test]
+fn a_plain_text_export_records_no_template_and_a_formatted_one_records_its_wire_id() {
+    assert_eq!(
+        recordable_template(TemplateId::Atelier, ExportFormat::Txt),
+        None
+    );
+    for format in [ExportFormat::Pdf, ExportFormat::Docx] {
+        assert_eq!(
+            recordable_template(TemplateId::Atelier, format).as_deref(),
+            Some("atelier")
+        );
+    }
+}

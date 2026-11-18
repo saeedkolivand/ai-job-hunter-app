@@ -113,6 +113,16 @@ pub struct AiGenerationRecord {
     /// pre-migration exported bundle importable.
     #[serde(rename = "qualityReport", default)]
     pub quality_report: String,
+    /// The template id the generation was last exported with (`NULL` until an
+    /// export; set by [`super::AiGenerationStore::record_export_template`], never
+    /// by a content save). Read by the outcome insights' template grouping;
+    /// `default` keeps a pre-migration bundle importable.
+    #[serde(
+        rename = "lastExportTemplate",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub last_export_template: Option<String>,
 }
 
 /// Merge an incoming per-job save into the existing application row: keep the
@@ -189,6 +199,9 @@ pub(super) fn merge_application(
         email_body,
         application_id: incoming.application_id.or(existing.application_id),
         quality_report: merge_quality_report(incoming.quality_report, existing.quality_report),
+        last_export_template: incoming
+            .last_export_template
+            .or(existing.last_export_template),
     }
 }
 

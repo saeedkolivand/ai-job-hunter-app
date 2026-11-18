@@ -237,4 +237,13 @@ pub(super) const MIGRATIONS: &[Migration] = &[
             )
         },
     },
+    // Additive: the template the generation was last exported with, written at
+    // export so the insights "template" grouping fills in over time. NULL until
+    // an export happens; old rows stay NULL (an "unknown" bucket, never a guess).
+    Migration {
+        name: "add_last_export_template",
+        up: |conn| {
+            conn.execute_batch("ALTER TABLE ai_generations ADD COLUMN last_export_template TEXT;")
+        },
+    },
 ];

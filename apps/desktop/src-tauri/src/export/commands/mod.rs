@@ -1,4 +1,4 @@
-use tauri::command;
+use tauri::{command, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{
@@ -261,12 +261,51 @@ pub async fn export_ats_view(path: String) -> AppResult<crate::validate::AtsView
         .map_err(|e| AppError::Message(format!("ATS view task failed: {e}")))?
 }
 
-/// Tauri command to export and save document with file dialog
+/// The wire id of the template a finished export used, or `None` when it must not be
+/// recorded: a plain-text export applies no template at all.
+fn recordable_template(
+    template: super::types::TemplateId,
+    format: super::types::ExportFormat,
+) -> Option<String> {
+    if format == super::types::ExportFormat::Txt {
+        return None;
+    }
+    serde_json::to_value(template)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+}
+
+/// Remember which template a job's generation was just exported with, so the
+/// outcome insights can group by it. Best-effort bookkeeping: a missing store, an
+/// unknown job or a write error never fails the export the user just completed.
+pub(crate) fn note_export_template(
+    app: &tauri::AppHandle,
+    job_url: &str,
+    template: super::types::TemplateId,
+    format: super::types::ExportFormat,
+) {
+    let Some(id) = recordable_template(template, format) else {
+        return;
+    };
+    let Some(store) = app.try_state::<crate::ai_generations::AiGenerationStore>() else {
+        return;
+    };
+    if let Err(e) = store.record_export_template(job_url, &id) {
+        log::warn!("export: template not recorded: {}", e.code());
+    }
+}
+
+/// Tauri command to export and save document with file dialog.
+///
+/// `generation_job_url` (optional) names the job whose generation is being
+/// exported; on a completed save its record remembers the template used.
 #[command]
 pub async fn documents_export_and_save(
     app: tauri::AppHandle,
     request: ExportRequest,
+    generation_job_url: Option<String>,
 ) -> AppResult<String> {
+    let (template, format) = (request.template_id, request.format);
     // Generate the document
     let result = documents_export_document(request).await?;
 
@@ -286,8 +325,10 @@ pub async fn documents_export_and_save(
     // forever on the 2nd export" symptom). `spawn_blocking` keeps the wait on a
     // dedicated blocking thread so repeat exports work.
     let filename = result.filename.clone();
+    let dialog_app = app.clone();
     let file_path = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
+        dialog_app
+            .dialog()
             .file()
             .add_filter(&filter_name, &[&ext])
             .set_title("Save Document")
@@ -307,6 +348,13 @@ pub async fn documents_export_and_save(
 
     // Write bytes to file
     std::fs::write(&path, result.data).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    if let Some(url) = generation_job_url
+        .as_deref()
+        .filter(|u| !u.trim().is_empty())
+    {
+        note_export_template(&app, url, template, format);
+    }
 
     Ok(path.to_string_lossy().to_string())
 }

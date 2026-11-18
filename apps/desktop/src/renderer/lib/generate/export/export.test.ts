@@ -111,12 +111,38 @@ describe('exportDOCX / exportPDF', () => {
   it.each([
     ['pdf', exportPDF],
     ['docx', exportDOCX],
-  ] as const)('resolves the %s export to the saved path', async (_format, exporter) => {
-    const exportAndSave = vi.fn().mockResolvedValue('/path/out');
+  ] as const)(
+    'passes the generation job url to the %s export and resolves to the saved path',
+    async (_format, exporter) => {
+      const exportAndSave = vi.fn().mockResolvedValue('/path/out');
+      _registerClient(createMockClient({ documents: { exportAndSave } }));
+
+      const saved = await exporter(
+        'Resume body',
+        'out',
+        'resume',
+        meta,
+        'classic',
+        false,
+        'en',
+        undefined,
+        undefined,
+        'https://jobs.example.com/42'
+      );
+      expect(exportAndSave).toHaveBeenCalledWith(
+        expect.objectContaining({ documentType: 'resume' }),
+        'https://jobs.example.com/42'
+      );
+      expect(saved).toBe('/path/out');
+    }
+  );
+
+  it('passes no job url for an export that belongs to no generation', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/path/out.pdf');
     _registerClient(createMockClient({ documents: { exportAndSave } }));
 
-    const saved = await exporter('Resume body', 'out', 'resume', meta, 'classic');
-    expect(saved).toBe('/path/out');
+    await exportPDF('Resume body', 'out.pdf', 'resume', meta, 'classic');
+    expect(exportAndSave.mock.calls[0]?.[1]).toBeUndefined();
   });
 
   it('threads the letter layout into the cover-letter export request', async () => {
