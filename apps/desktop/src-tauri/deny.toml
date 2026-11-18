@@ -30,24 +30,11 @@ ignore = [
     # released). Remove when a citationberg release ships it.
     "RUSTSEC-2026-0194",
     "RUSTSEC-2026-0195",
-    # zip <9 extraction advisories (SUID/SGID bits kept, symlink targets and
-    # Unix permissions applied outside the destination on `extract()`, and an
-    # abort on a symlink entry with a huge declared size, 0429). The
-    # app's own `zip` is already 9.x; the two old copies left are transitive
-    # pins with no semver-compatible upgrade (tauri-plugin-updater 2.14 needs
-    # zip 4, docx-rs 0.4.22 needs zip 8 — both are their latest releases).
-    # Neither is reachable: the updater extracts only on Windows (no SUID
-    # bits or Unix permissions there) and only after `verify_signature` has
-    # checked the download against this project's own updater key; docx-rs is
-    # used to WRITE documents only, and its zip reader is never called. The
-    # third path (chromiumoxide's browser fetcher) was removed by dropping the
-    # unused `fetcher`/`zip8` features. docx-rs has merged zip 9
-    # (bokuweb/docx-rs#944, not yet released). Remove when those dependents
-    # ship a zip 9 release.
-    "RUSTSEC-2026-0367",
-    "RUSTSEC-2026-0368",
-    "RUSTSEC-2026-0369",
-    "RUSTSEC-2026-0429",
+    # chrono is unmaintained (chronotope/chrono#1768); every version is
+    # affected, so there is no upgrade, and it is both a direct dependency and
+    # pulled in by feed-rs among others. Unmaintained, not vulnerable: remove
+    # when the app moves to a maintained date crate and the dependents follow.
+    "RUSTSEC-2026-0543",
 ]
 
 [licenses]
@@ -108,3 +95,6 @@ deny = ["enabled"]
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# docx-rs pinned to an exact upstream commit for its zip 9 move (see the
+# [patch.crates-io] note in Cargo.toml). Remove with that patch.
+allow-git = ["https://github.com/bokuweb/docx-rs"]
