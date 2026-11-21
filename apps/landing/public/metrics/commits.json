@@ -1,5 +1,17 @@
 [
   {
+    "sha": "5cea36a870f2d7e3072e78aa0a75748e0f244406",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-20T11:33:33Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "cfeddd0b827584d4e622978dea99cc85d75055b9",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump parking_lot from 0.12.5 to 0.13.0 in /apps/desktop/src-tauri (#1471)",
       "author": {
         "date": "2026-10-29T12:18:36Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "2f38c426a543e50c88d6f888ac4879f5faba3d81",
-    "commit": {
-      "message": "chore: bump lopdf from 0.45.0 to 0.46.0 in /apps/desktop/src-tauri (#1472)",
-      "author": {
-        "date": "2026-10-29T12:18:22Z"
       }
     },
     "author": {
