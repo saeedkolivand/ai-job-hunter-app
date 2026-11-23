@@ -1,5 +1,17 @@
 [
   {
+    "sha": "a7afda4c722d5c790155bc6d6eff1f4bb8662ae3",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-22T11:18:39Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "eafdfcf254b09a90d625799bbf6325c8a2698520",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1181,18 +1193,6 @@
       "message": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri (#1474)",
       "author": {
         "date": "2026-10-29T12:21:34Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "78f25873fb85afd1c27d439a7275c6e6acb6f4df",
-    "commit": {
-      "message": "chore: bump taiki-e/install-action (#1475)",
-      "author": {
-        "date": "2026-10-29T12:18:55Z"
       }
     },
     "author": {
