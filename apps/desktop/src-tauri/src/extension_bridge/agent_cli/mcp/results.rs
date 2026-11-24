@@ -13,6 +13,9 @@ use serde_json::{json, Value};
 
 use super::{agent_call, exit_code_for_reply, Verb, MCP_CALL_QUEUE_MAX};
 
+mod export_file;
+pub(super) use export_file::export_to_file;
+
 const CONFIRMATION_NOTE: &str = "This command is Effect::Irreversible and was called with no \
     proof (exitCode 4). \"detail\" above names the read command and field the proof comes from. \
     Call call-read for that command, take the named field from its result, then retry this exact \

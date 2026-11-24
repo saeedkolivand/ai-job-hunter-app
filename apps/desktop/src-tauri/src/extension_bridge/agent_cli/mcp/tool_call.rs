@@ -225,6 +225,8 @@ pub(super) fn dispatched_tool_result(
     verb: &Verb,
     dispatch: &mut dyn FnMut(&Verb) -> Result<Value, &'static str>,
 ) -> Value {
-    let (payload, code) = results::dispatch_payload(verb, dispatch);
+    let (mut payload, code) = results::dispatch_payload(verb, dispatch);
+    // Issue #1553: a document export answers a file path, not inline base64.
+    results::export_to_file(verb, &mut payload);
     tool_result(payload, code)
 }
