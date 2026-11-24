@@ -356,3 +356,36 @@ fn benefits_heading_variants_and_zero_overlap() {
     // A JD that is only a benefits section yields no blob at all.
     assert!(posting_text_blob("", Some("Wir bieten:\nJobrad"), None).is_none());
 }
+
+#[test]
+fn plain_skills_heading_ends_a_benefits_section() {
+    let jd = "Benefits\nGym membership\nSkills\nKubernetes and Terraform";
+    let kw = keywords_normalized(&posting_text_blob("", Some(jd), None).unwrap());
+    assert!(!kw.contains("gym"));
+    assert!(kw.contains("kubernetes") && kw.contains("terraform"));
+    // A short `Label:` line also closes the section.
+    let jd = "Benefits\nGym membership\nTech we use:\nKubernetes and Terraform";
+    let kw = keywords_normalized(&posting_text_blob("", Some(jd), None).unwrap());
+    assert!(!kw.contains("gym") && kw.contains("kubernetes") && kw.contains("terraform"));
+}
+
+#[test]
+fn deeper_markdown_heading_does_not_end_a_benefits_section() {
+    let jd = "## Benefits\n### Equipment\nLaptop\n## Requirements\nRust";
+    let kw = keywords_normalized(&posting_text_blob("", Some(jd), None).unwrap());
+    assert!(
+        !kw.contains("laptop") && !kw.contains("equipment"),
+        "{kw:?}"
+    );
+    assert!(kw.contains("rust"));
+}
+
+#[test]
+fn entity_escaped_benefits_section_is_still_excluded() {
+    let jd = "&lt;h2&gt;Aufgaben&lt;/h2&gt;&lt;p&gt;Kubernetes und Terraform&lt;/p&gt;\
+&lt;h2&gt;Wir bieten&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;Jobrad&lt;/li&gt;&lt;/ul&gt;\
+&lt;h2&gt;Profil&lt;/h2&gt;&lt;p&gt;Kafka&lt;/p&gt;";
+    let kw = keywords_normalized(&posting_text_blob("", Some(jd), None).unwrap());
+    assert!(!kw.contains("jobrad"), "{kw:?}");
+    assert!(kw.contains("kubernetes") && kw.contains("kafka"));
+}

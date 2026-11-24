@@ -350,6 +350,26 @@ pub(crate) async fn draft_with_language_retry<F, Fut>(
     job_ad: &str,
     target_language: &str,
     deadline: RunDeadline,
+    complete: F,
+) -> AppResult<(String, Value, LanguageRetryOutcome)>
+where
+    F: FnMut(bool) -> Fut,
+    Fut: Future<Output = AppResult<String>>,
+{
+    let (draft, artifact, outcome) =
+        retry_on_language_mismatch(source_resume, job_ad, target_language, deadline, complete)
+            .await?;
+    // Restore a dropped Projects section ONCE, on the draft actually kept: the language
+    // check above must judge the model's own text, not source-language text appended to it.
+    let (draft, artifact) = restore_dropped_projects(source_resume, draft, artifact);
+    Ok((draft, artifact, outcome))
+}
+
+async fn retry_on_language_mismatch<F, Fut>(
+    source_resume: &str,
+    job_ad: &str,
+    target_language: &str,
+    deadline: RunDeadline,
     mut complete: F,
 ) -> AppResult<(String, Value, LanguageRetryOutcome)>
 where
@@ -425,6 +445,16 @@ pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) ->
     if let Some(reason) = skipped {
         artifact["projectsNormalizeSkipped"] = json!(reason);
     }
+    (draft, artifact)
+}
+
+/// Appends the source's Projects section to a draft that dropped it (see
+/// [`restore_missing_projects`]) and records the warning + new counts on `artifact`.
+pub(crate) fn restore_dropped_projects(
+    source_resume: &str,
+    draft: String,
+    mut artifact: Value,
+) -> (String, Value) {
     let (draft, restored) = restore_missing_projects(source_resume, draft);
     if restored {
         // Content-free warning code (ADR-027): surfaced on the stage event.

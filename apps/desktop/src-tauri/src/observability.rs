@@ -223,7 +223,7 @@ fn join_spaced_user_segment(text: &str) -> String {
         }
         let rest = &text[seg_start..];
         let e = rest
-            .find(['\\', '/', '"', '\'', '\n', '\r'])
+            .find(['\\', '/', '"', '\n', '\r'])
             .unwrap_or(rest.len());
         let glued: String = rest[..e]
             .chars()

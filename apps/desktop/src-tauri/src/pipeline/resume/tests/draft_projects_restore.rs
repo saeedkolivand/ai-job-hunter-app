@@ -1,6 +1,6 @@
 //! #1549: a draft that dropped Projects gets the source's own section back.
 
-use super::super::stages::apply_projects_normalization;
+use super::super::stages::{apply_projects_normalization, restore_dropped_projects};
 
 /// The model omitted Projects although the source has one — the source's own
 /// section is appended verbatim and a warning is recorded.
@@ -8,7 +8,8 @@ use super::super::stages::apply_projects_normalization;
 fn restores_a_dropped_projects_section() {
     let source = "SUMMARY\n\nBuilder.\n\nPROJECTS\n\nLedger CLI - https://github.com/janedoe/ledger\nA bookkeeping tool.\n";
     let draft = "SUMMARY\n\nBuilder of tools.\n";
-    let (text, artifact) = apply_projects_normalization(source, draft.to_string());
+    let (normalized, artifact) = apply_projects_normalization(source, draft.to_string());
+    let (text, artifact) = restore_dropped_projects(source, normalized, artifact);
     assert!(text.starts_with("SUMMARY\n\nBuilder of tools."));
     assert!(text.contains(
         "PROJECTS\n\nLedger CLI - https://github.com/janedoe/ledger\nA bookkeeping tool."
@@ -17,11 +18,24 @@ fn restores_a_dropped_projects_section() {
     assert_eq!(artifact["chars"], text.chars().count());
 }
 
+/// Normalization alone never appends source text: the language check runs on
+/// its output, and appended source-language Projects would skew it.
+#[test]
+fn normalization_alone_does_not_append_the_source_projects() {
+    let source = "SUMMARY\n\nBuilder.\n\nPROJECTS\n\nLedger CLI - https://github.com/janedoe/ledger\nA bookkeeping tool.\n";
+    let draft = "SUMMARY\n\nBuilder of tools.\n";
+    let (text, artifact) = apply_projects_normalization(source, draft.to_string());
+    assert_eq!(text, draft);
+    assert!(artifact.get("warnings").is_none());
+}
+
 /// A source with no Projects section: nothing is invented, no warning.
 #[test]
 fn adds_nothing_when_source_has_no_projects() {
+    let source = "SUMMARY\n\nBuilder.\n";
     let draft = "SUMMARY\n\nBuilder of tools.\n";
-    let (text, artifact) = apply_projects_normalization("SUMMARY\n\nBuilder.\n", draft.to_string());
+    let (normalized, artifact) = apply_projects_normalization(source, draft.to_string());
+    let (text, artifact) = restore_dropped_projects(source, normalized, artifact);
     assert_eq!(text, draft);
     assert!(artifact.get("warnings").is_none());
 }

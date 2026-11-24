@@ -216,6 +216,14 @@ pub fn posting_text_blob(
         parts.push(title.to_string());
     }
     if let Some(d) = description {
+        // Decode an entity-escaped description first so the section filter sees real headings.
+        let decoded;
+        let d = if crate::scraping::http::has_escaped_markup(d) {
+            decoded = crate::scraping::http::html_to_markdown(d);
+            decoded.as_str()
+        } else {
+            d
+        };
         let plain = markdown_to_plain(&super::benefits::strip_benefit_sections(d));
         if !plain.trim().is_empty() {
             parts.push(plain);

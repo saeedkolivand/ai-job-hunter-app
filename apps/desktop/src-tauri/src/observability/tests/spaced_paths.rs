@@ -35,3 +35,12 @@ fn ordinary_prose_with_slashes_is_untouched() {
     let msg = "users and groups lookup failed, try again";
     assert_eq!(redact_tokens(msg), msg);
 }
+
+#[test]
+fn apostrophe_in_a_name_does_not_end_the_user_segment() {
+    let out = redact_tokens(r"failed to open C:\Users\Mary O'Connor Smith\AppData\app.exe now")
+        .to_lowercase();
+    for name in ["connor", "smith", "mary"] {
+        assert!(!out.contains(name), "leaked `{name}`: {out}");
+    }
+}

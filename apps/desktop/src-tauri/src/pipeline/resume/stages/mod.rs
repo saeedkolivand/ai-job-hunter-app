@@ -45,7 +45,8 @@ pub(crate) use self::cover_letter::{
 };
 #[cfg(test)]
 pub(crate) use self::draft::{
-    apply_projects_normalization, draft_with_language_retry, run_draft_attempt, DraftEnv,
+    apply_projects_normalization, draft_with_language_retry, restore_dropped_projects,
+    run_draft_attempt, DraftEnv,
     LanguageRetryOutcome,
 };
 #[cfg(test)]

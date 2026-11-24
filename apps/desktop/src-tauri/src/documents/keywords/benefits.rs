@@ -80,6 +80,15 @@ const OTHER_HEADINGS: &[&str] = &[
     "profil recherché",
     "requisitos",
     "requisiti",
+    "skills",
+    "tech stack",
+    "technologies",
+    "must have",
+    "nice to have",
+    "kenntnisse",
+    "qualifikationen",
+    "anforderungsprofil",
+    "profil",
 ];
 
 fn heading_text(line: &str) -> String {
@@ -93,22 +102,42 @@ fn is_markdown_heading(line: &str) -> bool {
     t.starts_with('#') || (t.len() > 4 && t.starts_with("**") && t.ends_with("**"))
 }
 
-/// Remove every benefits section: from a benefits heading up to the next heading (markdown
-/// heading, bold line, or a known section heading like "Ihr Profil"). Run on raw description
-/// text, before [`super::markdown_to_plain`] strips the heading markers.
+/// Markdown nesting level of a heading line: the `#` count; a bold line counts as top level (1).
+fn md_level(line: &str) -> usize {
+    match line.trim().chars().take_while(|&c| c == '#').count() {
+        0 => 1,
+        n => n,
+    }
+}
+
+/// A short `Label:` line that is not a benefits heading opens a new topic (e.g. `Tech stack:`).
+fn is_short_label(line: &str) -> bool {
+    let t = line.trim();
+    t.ends_with(':') && t.split_whitespace().count() <= 6
+}
+
+/// Remove every benefits section: from a benefits heading up to the next heading of the same or
+/// a shallower level (markdown heading, bold line, short `Label:` line, or a known section heading
+/// like "Ihr Profil"). Run on raw description text, before [`super::markdown_to_plain`] strips the
+/// heading markers.
 pub(super) fn strip_benefit_sections(text: &str) -> String {
-    let mut skipping = false;
+    // `None` = not skipping; `Some(0)` = opened by a plain/bold heading (any markdown heading
+    // ends it); `Some(n)` = opened by an `n`-level `#` heading.
+    let mut skipping: Option<usize> = None;
     let mut kept: Vec<&str> = Vec::new();
     for line in text.lines() {
         let h = heading_text(line);
         if BENEFIT_HEADINGS.contains(&h.as_str()) {
-            skipping = true;
+            skipping = Some(line.trim().chars().take_while(|&c| c == '#').count());
             continue;
         }
-        if skipping && (OTHER_HEADINGS.contains(&h.as_str()) || is_markdown_heading(line)) {
-            skipping = false;
+        if let Some(open) = skipping {
+            let ends_by_md = is_markdown_heading(line) && (open == 0 || md_level(line) <= open);
+            if OTHER_HEADINGS.contains(&h.as_str()) || ends_by_md || is_short_label(line) {
+                skipping = None;
+            }
         }
-        if !skipping {
+        if skipping.is_none() {
             kept.push(line);
         }
     }
