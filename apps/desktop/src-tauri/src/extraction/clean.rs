@@ -7,8 +7,36 @@
 //! control characters — so the recovered text is clean for the AI, the structured
 //! pre-pass, and the renderer.
 
+use std::sync::LazyLock;
+
+use regex::{Captures, Regex};
+
 use crate::export::parser::is_private_use;
 use crate::extraction::types::Link;
+
+/// A run of single digits each one space apart, plus an optional `/` after it.
+static KERNED_DIGITS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b\d(?: \d)+\b(?: ?/ ?)?").unwrap());
+
+/// Rejoin dates a PDF text layer kerned digit by digit (`0 2 /2 0 2 3` → `02/2023`,
+/// #1563), so every downstream date matcher sees the ordinary form. Only a 1-2 digit
+/// month before `/` or a 19xx/20xx year is rejoined; any other run (a kerned phone
+/// number, a list of single digits) is left as written.
+pub fn rejoin_kerned_dates(text: &str) -> String {
+    KERNED_DIGITS
+        .replace_all(text, |c: &Captures| {
+            let run = &c[0];
+            let slash = run.trim_end().ends_with('/');
+            let digits: String = run.chars().filter(char::is_ascii_digit).collect();
+            let year = digits.len() == 4 && (digits.starts_with("19") || digits.starts_with("20"));
+            match (slash, digits.len()) {
+                (true, 1..=2) => format!("{digits}/"),
+                (false, _) if year => digits,
+                _ => run.to_string(),
+            }
+        })
+        .into_owned()
+}
 
 /// Remove Private Use Area glyphs, the replacement char, and control characters
 /// (keeping the `\n` / `\t` / `\r` whitespace that carries layout).

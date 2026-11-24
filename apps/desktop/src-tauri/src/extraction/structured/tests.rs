@@ -186,3 +186,9 @@ fn a_kerned_email_and_digit_spaced_phone_are_rejoined() {
         Some("+31 6 1234 5678")
     );
 }
+
+#[test]
+fn a_comma_bearing_skills_segment_is_never_a_location() {
+    let text = "Jane Doe\njane@example.com\n\nSKILLS\nRust, TypeScript | Python, SQL\n";
+    assert!(structure(&extracted(text, vec![])).location.is_none());
+}
