@@ -132,3 +132,35 @@ fn build_model_reconciles_header_from_typed_fields() {
         s.heading == "EXPERIENCE" && s.blocks.iter().any(|b| matches!(b, Block::Entry(_)))
     }));
 }
+
+/// #1451 / #1561: the header shape of a designer-made PDF — leading blank lines,
+/// an ALL-CAPS Unicode name, a tagline, `City, Country · email · phone`, and
+/// letter-spaced headings baked into the text layer (one with a hyphenated word).
+const DESIGNED_PDF: &str = "\n\nMARÍA GARCÍA\n\nData Engineer  ·  Platform Focus\n\n\
+Lyon, France  ·  maria@example.com  ·  0612 345678\n\
+example.dev  ·  linkedin.com/in/example\n\n\
+P R O F I L E\n\nEngineer building data platforms end to end.\n\n\
+E X P E R I E N C E\n\nAcme Corp  2020 - Present\nData Engineer\n- Built pipelines\n\n\
+S E L E C T E D   O P E N - S O U R C E   P R O J E C T S\n\nflowkit\n- A streaming toolkit\n";
+
+#[test]
+fn designed_pdf_header_yields_name_location_and_a_projects_section() {
+    let sr = structure(&extracted(DESIGNED_PDF, vec![]));
+    assert_eq!(sr.name.value, "MARÍA GARCÍA");
+    assert_eq!(sr.name.confidence, Confidence::High);
+    assert_eq!(
+        sr.location.map(|l| l.value).as_deref(),
+        Some("Lyon, France")
+    );
+    let projects = sr.sections.iter().find(|s| s.kind == "projects");
+    assert_eq!(
+        projects.map(|s| s.heading.as_str()),
+        Some("SELECTED OPEN-SOURCE PROJECTS"),
+        "sections: {:?}",
+        sr.sections
+            .iter()
+            .map(|s| (&s.kind, &s.heading))
+            .collect::<Vec<_>>()
+    );
+    assert!(!sr.review_required, "warnings: {:?}", sr.warnings);
+}

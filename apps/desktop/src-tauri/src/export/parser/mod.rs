@@ -38,9 +38,15 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // form is a heading we know. Gating on the result means an ordinary line can
     // never be rewritten by accident, and every downstream consumer
     // (`SectionId::from_header`, `documents::evidence`, the renderer) sees the
-    // same readable text.
+    // same readable text. A compound heading ("SELECTED OPEN-SOURCE PROJECTS",
+    // #1561) is not in the exact-name list but still classifies by its stem.
     if let Some(despaced) = despace_letterspaced(&clean) {
-        if is_known_section_name(&despaced) {
+        if is_known_section_name(&despaced)
+            || !matches!(
+                crate::model::document::SectionId::from_header(&despaced),
+                crate::model::document::SectionId::Custom(_)
+            )
+        {
             clean = despaced;
         }
     }

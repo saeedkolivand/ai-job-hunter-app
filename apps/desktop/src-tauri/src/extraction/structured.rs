@@ -217,10 +217,17 @@ fn extract_name(text: &str) -> Field<String> {
 }
 
 /// Best-effort location: a short, comma-bearing line near the top that isn't the
-/// contact/email line. Low confidence by nature.
+/// contact/email segment. Each `·` / `|` / `•` segment is tried on its own, so
+/// a `City, Country · email · phone` contact line still yields the city (#1561).
+/// Low confidence by nature.
 fn extract_location(text: &str) -> Option<Field<String>> {
-    for line in text.lines().take(6) {
-        let l = line.trim();
+    let segments = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(6)
+        .flat_map(|line| line.split(['·', '|', '•']));
+    for segment in segments {
+        let l = segment.trim();
         if l.len() < 3 || l.len() > 60 || !l.contains(',') {
             continue;
         }
