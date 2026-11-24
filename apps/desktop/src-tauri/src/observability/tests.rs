@@ -1,6 +1,7 @@
 use super::this_module_path;
 
 mod header_echoes;
+mod spaced_paths;
 
 /// Pins the module path every `Span::begin`/`end`/`end_with` call actually
 /// logs under. `log::info!` with no explicit `target:` resolves to the

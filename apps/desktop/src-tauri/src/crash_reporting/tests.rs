@@ -1,5 +1,6 @@
 use super::*;
 
+mod image_paths;
 mod supervisor;
 
 /// Cargo features on `sentry` that would open a log or metric pipeline: the

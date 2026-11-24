@@ -156,7 +156,8 @@ pub fn sanitize_reason(reason: &str) -> String {
 /// "text about to leave the machine" consumers never drift into redactors of
 /// differing strength (ADR-027) — see that function's doc.
 pub fn redact_tokens(text: &str) -> String {
-    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let joined = join_spaced_user_segment(text);
+    let tokens: Vec<&str> = joined.split_whitespace().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < tokens.len() {
@@ -195,6 +196,42 @@ pub fn redact_tokens(text: &str) -> String {
         out.push_str(&redact_token(token));
         i += 1;
     }
+    out
+}
+
+/// Glue the spaces inside a home-path user segment (`Users\First Last\…`,
+/// `home/first last/…`) with `_`, so the whitespace split in [`redact_tokens`]
+/// keeps the whole path in ONE token (#1530). Only a segment of at most three
+/// words, on one line, closed by a further separator, is touched.
+fn join_spaced_user_segment(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut pos = 0;
+    while pos < text.len() {
+        let hit = ["users\\", "users/", "home/"]
+            .iter()
+            .filter_map(|m| lower[pos..].find(m).map(|i| (pos + i, m.len())))
+            .min();
+        let Some((at, mlen)) = hit else { break };
+        let seg_start = at + mlen;
+        let before_ok = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric();
+        let rest = &text[seg_start..];
+        let seg_end = rest
+            .find(['\\', '/', '\n'])
+            .filter(|&e| rest.as_bytes()[e] != b'\n');
+        match seg_end {
+            Some(e) if before_ok && e > 0 && rest[..e].split(' ').count() <= 3 => {
+                out.push_str(&text[pos..seg_start]);
+                out.push_str(&rest[..e].replace(' ', "_"));
+                pos = seg_start + e;
+            }
+            _ => {
+                out.push_str(&text[pos..seg_start]);
+                pos = seg_start;
+            }
+        }
+    }
+    out.push_str(&text[pos..]);
     out
 }
 

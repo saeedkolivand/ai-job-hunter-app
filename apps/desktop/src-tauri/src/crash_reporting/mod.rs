@@ -288,12 +288,32 @@ fn redact_json(value: &mut serde_json::Value) {
     }
 }
 
+/// Reduce each `debug_meta.images[]` path field to its basename (either
+/// separator): the whitespace-split redactor cannot be trusted with a spaced
+/// profile folder, and symbolication keys on the debug ID, not the directory.
+fn basename_debug_images(json: &mut serde_json::Value) {
+    let Some(images) = json
+        .pointer_mut("/debug_meta/images")
+        .and_then(|v| v.as_array_mut())
+    else {
+        return;
+    };
+    for image in images {
+        for key in ["name", "code_file", "debug_file"] {
+            if let Some(serde_json::Value::String(s)) = image.get_mut(key) {
+                *s = s.rsplit(['\\', '/']).next().unwrap_or_default().to_owned();
+            }
+        }
+    }
+}
+
 /// Apply [`redact_json`] to a whole event. A serialization failure drops the
 /// event entirely — an unredactable event is never worth sending.
 fn redact_event(
     event: sentry::protocol::Event<'static>,
 ) -> Option<sentry::protocol::Event<'static>> {
     let mut json = serde_json::to_value(&event).ok()?;
+    basename_debug_images(&mut json);
     redact_json(&mut json);
     serde_json::from_value(json).ok()
 }
