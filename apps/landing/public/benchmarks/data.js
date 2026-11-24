@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795549530209,
+  "lastUpdate": 1795561537231,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "84ef96d377a5d83ca632261fc8f5285744869b13",
-          "message": "fix: posting score, trust and agent-cli addressing integrity (#1104-#1107) (#1109)\n\n* fix: recognize every adzuna market host and flag postings with no description\n\nCompanyDomainMismatch fired for nearly every Adzuna-sourced posting\nregardless of employer legitimacy, because the allowlist recognized\nonly api.adzuna.com while Adzuna's own redirect_url also points at\nper-market websites (www.adzuna.de and, less obviously, compound\nccTLDs like www.adzuna.co.uk covering 7 of 19 supported markets,\nincluding the UK). is_adzuna_market_host now recognizes both shapes,\nanchored so no lookalike host (adzuna.evil.com, a compound-shaped\nspoof) can borrow the exemption.\n\nSeparately, a posting with an empty description (LinkedIn's free-tier\nboard returns one for every listing) carried full High trust with no\nsignal anything was missing, because assess_trust never saw the\ndescription at all. It now takes a third parameter and a new\nDescriptionUnavailable flag caps trust below High when the text is\nblank, through the same score-penalty mechanism every other flag uses.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: stop autopilot from hiding a title-only match behind a full-confidence score\n\nbest-matches could show a URL and a score from two different rows in\nthe same cluster, because the row's display fields came from the\ncluster's canonical (richest-content) member while its score came from\na different, best-scored member. A new scoreUrl field names which\nposting a displayed score actually belongs to whenever the two\ndiverge, so a client is never left following a URL that doesn't own\nthe number next to it.\n\nSeparately, re-admitting a job a minMatchScore change had just\nfiltered out could overwrite a persisted, semantically-reranked\nCombined score with a cheaper same-run Keyword-only one, potentially\ndropping a genuinely good match out of best-matches entirely (the\nqualifying cut is higher for Keyword than Combined). Re-admission now\nrefuses to downgrade a persisted Combined score to a Keyword one,\nwithout blocking the reverse: a real same-run upgrade still applies.\n\nscore_provisional (the muted-score marker) also never fired for a\nposting with no usable description or requirements text unless it\nhappened to come from an aggregator snippet, letting a bare-title\nkeyword match round to 100% with full apparent confidence; it now\nalso fires whenever the scoring text was title-only, honestly\nincluding the LinkedIn and five other boards this affects.\n\nCorrecting a posting's description now refreshes its trust flags to\nmatch the new text, but deliberately leaves score_provisional alone —\nthe numeric score isn't recomputed by a manual correction, so nothing\nabout its confidence has actually changed.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: wire the new description-unavailable trust flag into the renderer\n\nTrustFlag gained a DescriptionUnavailable variant on the Rust side;\nthe wire type's flags union and the trust badge's exhaustive flag-key\nmap both need every variant mapped or a build breaks, by design, so a\nnew flag can never reach the renderer with no label the way one did\nbefore this repeated safeguard existed.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: let scrape_update_description correct a posting by url, not an internal id\n\nThe command required an id that addressed only the session-lifetime\nPostingsCache, but no Agent/MCP read command ever exposes that id —\nevery reader addresses a posting by url. Worse, even a correct\nid-based lookup could never reach a posting surfaced via job or\nbest-matches, since those read Autopilot.found_jobs, a completely\nseparate persisted store the old id-keyed cache write never touched.\n\nThe request now carries url, matched the same way job_resource\nalready resolves one — canonicalized through board-specific rewrites\n(so a LinkedIn search-view link and its canonical view-url land on the\nidentical identity) before normalizing, with an explicit http(s)\nscheme required so a stale caller's old id-shaped value is rejected\nup front rather than silently missing both stores. The write now\nreaches both PostingsCache and every matching found-job row across\nevery autopilot, and refuses an empty description outright — this\ncommand corrects a description, it must never be able to blank one.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* docs: regenerate api.md for this branch's contract changes\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* refactor: derive the update-description request type from its contract\n\nTwo call sites duplicated the same inline { url, description } object\ntype the ScrapeContract interface already declares. Deriving both from\nParameters<ScrapeContract['updateDescription']>[0] means a future\nfield change on the contract can no longer drift silently out of sync\nwith either caller.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: close two trust-module gaps a review found (blank-description check, adzuna spoofing)\n\nDescriptionUnavailable used a raw .trim().is_empty() check, weaker than\ndescription_is_blank (commands::autopilot's no_jd_text predicate) — a\ndescription that's just a bare URL or markdown noise read as \"usable\"\nscoring text and got full trust. Switch assess_trust to call the shared\npredicate so both checks agree on the same input.\n\nis_adzuna_market_host's single-label branch accepted adzuna.<any TLD>,\nletting a squatted lookalike (adzuna.xyz, adzuna.top, ...) suppress\nCompanyDomainMismatch for a spoofed posting. Restrict it to a curated\nADZUNA_SINGLE_LABEL_TLDS allowlist (11 ccTLD markets + the us -> com\nexception), mirroring how the compound-ccTLD branch already works.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
-          "timestamp": "2026-09-04T22:33:24+02:00",
-          "tree_id": "d68d15b048bcfb34f39fc913030fa0cf71e5b35b",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/84ef96d377a5d83ca632261fc8f5285744869b13"
-        },
-        "date": 1788555487204,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2273493,
-            "range": "± 63577",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2791233,
-            "range": "± 91616",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 335420,
-            "range": "± 14866",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 443410,
             "range": "± 12120",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b496887c8c5f4e09a82827a71fe17499b3c2ac6c",
+          "message": "fix: split an entry date glued to the company in pdf imports (#1565)\n\n* fix: split an entry date glued to the company off at the start of the range\n\n- a pdf that right-aligns the date column can lose that gap (Role  ·  Company Dec 2022 – Nov 2025); the date used to swallow the company\n- split_gap_date moves the split to where the date starts (widened over a numeric month such as 03/2018), so the date holds only the range\n- moved out of parse_line into shapes.rs to keep parser/mod.rs under the r8 cap\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix: move the gap-date split only over company text\n\n- Match the range start on whole date tokens, so a month inside a word (Novartis) opens no range\n- Keep the original split when only a wrapper like ( or a phone/url sits before the date\n- Measure on the raw line so a bold date still splits; drop a trailing separator from the title\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T23:39:27+01:00",
+          "tree_id": "28961f89d6f536aeef0dd6dd575461b09978f6ed",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/b496887c8c5f4e09a82827a71fe17499b3c2ac6c"
+        },
+        "date": 1795561536326,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2233057,
+            "range": "± 91728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2654458,
+            "range": "± 35224",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 491612,
+            "range": "± 17473",
             "unit": "ns/iter"
           }
         ]
