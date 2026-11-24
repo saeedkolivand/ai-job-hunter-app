@@ -2116,6 +2116,7 @@
       "hintNoDescription": "Keine Stellenbeschreibung zum Anpassen vorhanden",
       "cancelledNoOutput": "Generierung abgebrochen — es wurde noch nichts geschrieben.",
       "weakAnalysis": "Die Stellenanalyse war schwach, daher wurden die Anforderungen per Stichwortabgleich ermittelt. Prüfen Sie den Abgleich, bevor Sie sich darauf verlassen.",
+      "projectsRestored": "Das Modell hat Ihren Abschnitt „Projekte“ ausgelassen, daher wurde der Abschnitt aus Ihrem Lebenslauf unverändert eingefügt. Prüfen Sie ihn vor dem Versand.",
       "wizard": {
         "steps": {
           "jobAd": "Stellenanzeige",
