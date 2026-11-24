@@ -558,7 +558,8 @@ jobs:
           set -euo pipefail
           echo "::group::Uploading debug files + sourcemaps"
           VERSION="${{ steps.resolve.outputs.version }}"
-          npx --yes @sentry/cli@^2 releases new "${VERSION#v}"
+          # Exact pin (#1531): this step holds SENTRY_AUTH_TOKEN, so never resolve a floating range.
+          npx --yes @sentry/cli@2.58.6 releases new "${VERSION#v}"
           # Native debug files: PDB (Windows), dSYM (macOS), `.debug` (Linux).
           # Windows/macOS: `split-debuginfo = "packed"` puts the pdb/dSYM beside
           # the binary in target/. Linux: the release build keeps DWARF in the
@@ -636,13 +637,13 @@ jobs:
 
           printf 'Uploading debug files:\n'
           printf '  %s\n' "${DIFS[@]}"
-          npx --yes @sentry/cli@^2 debug-files upload "${DIFS[@]}"
+          npx --yes @sentry/cli@2.58.6 debug-files upload "${DIFS[@]}"
           # Renderer sourcemaps — emitted as 'hidden', so they exist on disk here
           # but were never referenced from the shipped bundle.
-          npx --yes @sentry/cli@^2 sourcemaps inject apps/desktop/dist/
-          npx --yes @sentry/cli@^2 sourcemaps upload --release "${VERSION#v}" \
+          npx --yes @sentry/cli@2.58.6 sourcemaps inject apps/desktop/dist/
+          npx --yes @sentry/cli@2.58.6 sourcemaps upload --release "${VERSION#v}" \
             apps/desktop/dist/
-          npx --yes @sentry/cli@^2 releases finalize "${VERSION#v}"
+          npx --yes @sentry/cli@2.58.6 releases finalize "${VERSION#v}"
           echo "::endgroup::"
 
       # The visibility half of the trade above. `continue-on-error` keeps the
