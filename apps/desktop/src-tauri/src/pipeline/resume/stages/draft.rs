@@ -67,6 +67,8 @@ use crate::pipeline::{Completer, Stage};
 
 use super::cover_letter::{take_brief, LetterJob, LETTER_STAGE};
 use super::letter_ahead::{beside, can_overlap, write_traced, Route};
+use super::sections;
+use crate::pipeline::resume::types::SectionKey;
 use crate::validate::content::document_language_mismatch;
 
 pub struct Draft;
@@ -348,6 +350,26 @@ pub(crate) async fn draft_with_language_retry<F, Fut>(
     job_ad: &str,
     target_language: &str,
     deadline: RunDeadline,
+    complete: F,
+) -> AppResult<(String, Value, LanguageRetryOutcome)>
+where
+    F: FnMut(bool) -> Fut,
+    Fut: Future<Output = AppResult<String>>,
+{
+    let (draft, artifact, outcome) =
+        retry_on_language_mismatch(source_resume, job_ad, target_language, deadline, complete)
+            .await?;
+    // Restore a dropped Projects section ONCE, on the draft actually kept: the language
+    // check above must judge the model's own text, not source-language text appended to it.
+    let (draft, artifact) = restore_dropped_projects(source_resume, draft, artifact);
+    Ok((draft, artifact, outcome))
+}
+
+async fn retry_on_language_mismatch<F, Fut>(
+    source_resume: &str,
+    job_ad: &str,
+    target_language: &str,
+    deadline: RunDeadline,
     mut complete: F,
 ) -> AppResult<(String, Value, LanguageRetryOutcome)>
 where
@@ -424,4 +446,42 @@ pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) ->
         artifact["projectsNormalizeSkipped"] = json!(reason);
     }
     (draft, artifact)
+}
+
+/// Appends the source's Projects section to a draft that dropped it (see
+/// [`restore_missing_projects`]) and records the warning + new counts on `artifact`.
+pub(crate) fn restore_dropped_projects(
+    source_resume: &str,
+    draft: String,
+    mut artifact: Value,
+) -> (String, Value) {
+    let (draft, restored) = restore_missing_projects(source_resume, draft);
+    if restored {
+        // Content-free warning code (ADR-027): surfaced on the stage event.
+        artifact["warnings"] = json!(["projects_restored_from_source"]);
+        artifact["chars"] = json!(draft.chars().count());
+        artifact["lines"] = json!(draft.lines().count());
+    }
+    (draft, artifact)
+}
+
+/// A draft with NO Projects section while the source has one (small local
+/// models drop it, #1549) gets the source's own section appended verbatim —
+/// never fabricated. A draft that has a Projects section is left alone.
+fn restore_missing_projects(source_resume: &str, draft: String) -> (String, bool) {
+    let has_projects =
+        |text: &str| sections::find(&sections::split(text), SectionKey::Projects).cloned();
+    if has_projects(&draft).is_some() {
+        return (draft, false);
+    }
+    let Some(section) = has_projects(source_resume) else {
+        return (draft, false);
+    };
+    let lines: Vec<&str> = source_resume.lines().collect();
+    let block = section.text(&lines);
+    if block.trim().is_empty() {
+        return (draft, false);
+    }
+    let restored = format!("{}\n\n{}\n", draft.trim_end(), block.trim_end());
+    (restored, true)
 }

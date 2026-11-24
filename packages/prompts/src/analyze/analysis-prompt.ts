@@ -7,6 +7,10 @@ import { type PromptTarget, resolveProfile } from '../provider/index.js';
 import { SCHEMA, SCHEMA_COMPACT } from './schema.js';
 
 /** Which hiring convention to evaluate the résumé against (#54). */
+/** Perks are what the employer gives, never what the candidate must bring (#1554). Every depth. */
+const BENEFITS_NOTE =
+  'Never treat perks or benefits (e.g. own hardware, bike leasing, training budget, "What we offer" / "Wir bieten" sections) as requirements or keywords.';
+
 export type AnalysisMode = 'work' | 'academic';
 
 export interface PromptMeta {
@@ -96,7 +100,7 @@ ${toneNote}
 ${langNote}
 
 Analyze how well the resume matches the job ad. Work through these checks, then write the JSON:
-1. Extract the top 10 required skills/technologies from the job ad
+1. Extract the top 10 required skills/technologies from the job ad. ${BENEFITS_NOTE}
 2. Check each one against the resume — matched or missing?
 3. Check ATS format: standard section headers, single column, no tables
 4. Check achievement quality: action verbs, quantified results
@@ -124,7 +128,7 @@ ${modeNote}
 ${toneNote}
 ${langNote}
 
-TASK: analyze the resume against the job ad through your three lenses (ATS, recruiter, strategist). Extract the job requirements, map each to the resume (semantic match), audit ATS formatting and achievement quality, then score every dimension honestly per your acceptance checks. Validate the JSON against the schema before you return it.
+TASK: analyze the resume against the job ad through your three lenses (ATS, recruiter, strategist). Extract the job requirements (${BENEFITS_NOTE}), map each to the resume (semantic match), audit ATS formatting and achievement quality, then score every dimension honestly per your acceptance checks. Validate the JSON against the schema before you return it.
 
 Return a JSON object matching this schema:
 ${schemaStr}
@@ -152,6 +156,7 @@ b) Required soft skills and competencies
 c) Required years of experience and seniority level
 d) Required education or certifications
 e) Key responsibilities that indicate what experience is most valued
+${BENEFITS_NOTE}
 
 STEP 3 — KEYWORD GAP ANALYSIS
 For each required keyword/skill from Step 2:

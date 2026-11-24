@@ -28,7 +28,7 @@ import { usePipelineRunsForJob } from '@/services/use-resume-pipeline';
 import { pipelineStepForStage } from './lib/pipeline-steps';
 import type { TailorWizardState } from './lib/tailor-state';
 import type { TailorTarget } from './lib/tailor-target';
-import { usedKeywordFallback } from './lib/weak-analysis';
+import { restoredSourceProjects, usedKeywordFallback } from './lib/weak-analysis';
 import { resolveTargetLanguage } from './useTailorPipeline/resolveTargetLanguage';
 import { useEditPersistence } from './useTailorPipeline/useEditPersistence';
 import { usePipelineReview } from './useTailorPipeline/usePipelineReview';
@@ -476,6 +476,7 @@ export function useTailorPipeline({
       atsMode,
       accent,
       letterLayoutId,
+      generationId: session.detail?.generationId,
     }
   );
 
@@ -511,6 +512,7 @@ export function useTailorPipeline({
     error: session.error,
     stoppedReason: session.detail?.stoppedReason,
     weakAnalysis: usedKeywordFallback(session.detail?.events),
+    projectsRestored: restoredSourceProjects(session.detail?.events),
     copied,
     exportOpen,
     setExportOpen,

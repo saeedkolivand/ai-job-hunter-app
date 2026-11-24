@@ -246,10 +246,9 @@ describe('ApplicationDetailPage — Documents tab toolbar', () => {
 
   it('shows an error when marking as applied fails', () => {
     state.controllerStage = 'done';
-    // The command resolves `{ error }` on failure rather than rejecting.
-    mockSetStatusMutate.mockImplementationOnce(
-      (_v: unknown, o?: { onSuccess?: (d: { error?: string }) => void }) =>
-        o?.onSuccess?.({ error: 'x' })
+    // The hook turns a resolved `{ error }` into a rejection, so onError fires.
+    mockSetStatusMutate.mockImplementationOnce((_v: unknown, o?: { onError?: () => void }) =>
+      o?.onError?.()
     );
     setLoaded(makeApp({ status: 'saved' }), [], []);
     render(<ApplicationDetailPage />);

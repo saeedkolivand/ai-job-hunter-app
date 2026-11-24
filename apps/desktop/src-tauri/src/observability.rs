@@ -156,7 +156,8 @@ pub fn sanitize_reason(reason: &str) -> String {
 /// "text about to leave the machine" consumers never drift into redactors of
 /// differing strength (ADR-027) — see that function's doc.
 pub fn redact_tokens(text: &str) -> String {
-    let tokens: Vec<&str> = text.split_whitespace().collect();
+    let joined = join_spaced_user_segment(text);
+    let tokens: Vec<&str> = joined.split_whitespace().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
     while i < tokens.len() {
@@ -195,6 +196,43 @@ pub fn redact_tokens(text: &str) -> String {
         out.push_str(&redact_token(token));
         i += 1;
     }
+    out
+}
+
+/// Glue the spaces inside a home-path user segment (`Users\First Last\…`,
+/// `home/first last/…`) with `_`, so the whitespace split in [`redact_tokens`]
+/// keeps the whole path in ONE token (#1530). The segment runs to the next path
+/// separator, quote, line break or end of text, whatever its word count —
+/// over-redacting a trailing phrase is the safe failure. Whitespace is the
+/// tokenizer's own (`char::is_whitespace`), so an NBSP cannot split it either.
+fn join_spaced_user_segment(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let mut out = String::with_capacity(text.len());
+    let mut pos = 0;
+    while pos < text.len() {
+        let hit = ["users\\", "users/", "home/"]
+            .iter()
+            .filter_map(|m| lower[pos..].find(m).map(|i| (pos + i, m.len())))
+            .min();
+        let Some((at, mlen)) = hit else { break };
+        let seg_start = at + mlen;
+        out.push_str(&text[pos..seg_start]);
+        pos = seg_start;
+        if at > 0 && lower.as_bytes()[at - 1].is_ascii_alphanumeric() {
+            continue;
+        }
+        let rest = &text[seg_start..];
+        let e = rest
+            .find(['\\', '/', '"', '\n', '\r'])
+            .unwrap_or(rest.len());
+        let glued: String = rest[..e]
+            .chars()
+            .map(|c| if c.is_whitespace() { '_' } else { c })
+            .collect();
+        out.push_str(&glued);
+        pos = seg_start + e;
+    }
+    out.push_str(&text[pos..]);
     out
 }
 

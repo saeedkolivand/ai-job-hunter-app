@@ -14,6 +14,7 @@ import { GeneratingPanel } from './GeneratingPanel';
 import { InterviewQuestionsModal } from './InterviewQuestionsModal';
 import { type TailorFlowStage, toRunState } from './lib/tailor-stage';
 import type { TailorWizardState } from './lib/tailor-state';
+import { ProjectsRestoredNotice } from './ProjectsRestoredNotice';
 import { ReferralModal } from './ReferralModal';
 import { ResultsPanel } from './ResultsPanel';
 import { TailorWizard } from './TailorWizard';
@@ -361,6 +362,9 @@ export function TailorFlow({
       </span>
 
       {gen.weakAnalysis && (stage === 'generating' || stage === 'done') && <WeakAnalysisNotice />}
+      {gen.projectsRestored && (stage === 'generating' || stage === 'done') && (
+        <ProjectsRestoredNotice />
+      )}
 
       {/* Stage body */}
       <div className="min-h-0 flex-1">

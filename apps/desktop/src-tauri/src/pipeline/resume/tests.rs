@@ -28,6 +28,7 @@ mod cover_letter;
 mod ctx;
 mod deadline;
 mod draft;
+mod draft_projects_restore;
 mod early_research_wiring_guard;
 mod effort_wiring_guard;
 mod floor_wiring_guard;

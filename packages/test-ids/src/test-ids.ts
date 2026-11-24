@@ -137,6 +137,7 @@ export const TEST_IDS = {
     /** Inline banner acknowledging a cancel that produced no output. */
     generationCancelled: 'generation-cancelled',
     weakAnalysisNotice: 'weak-analysis-notice',
+    projectsRestoredNotice: 'projects-restored-notice',
     /** The persistently-mounted sr-only live region (CR-7) — distinct from
      *  the visual banners' own `role="status"`, which also exist. */
     liveAnnouncer: 'live-announcer',

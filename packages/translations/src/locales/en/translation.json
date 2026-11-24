@@ -2112,6 +2112,7 @@
       "hintNoDescription": "No job description to tailor against",
       "cancelledNoOutput": "Generation was cancelled — nothing was written yet.",
       "weakAnalysis": "The job analysis was weak, so the requirements were extracted by keyword matching. Review the match before relying on it.",
+      "projectsRestored": "The model left out your Projects section, so we added the one from your résumé unchanged. Review it before sending.",
       "wizard": {
         "steps": {
           "jobAd": "Job ad",
