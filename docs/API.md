@@ -4432,6 +4432,13 @@ export interface PipelineRunDetail extends PipelineRunSummary {
    *  completes, and may carry later edits (see {@link
    *  ResumePipelineContract.get}). */
   resumeText: string;
+  /**
+   * Id of the posting's per-job `ai_generations` row (the aggregate the
+   * résumé/report above are read from). Pass it to `documents.exportAndSave`
+   * so the export records its template on that row. Absent when the job has no
+   * stored row.
+   */
+  generationId?: string;
 }
 
 /** One stage event as persisted (the durable twin of `pipeline:stage`). */

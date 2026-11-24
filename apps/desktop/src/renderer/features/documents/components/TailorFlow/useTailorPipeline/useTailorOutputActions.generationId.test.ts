@@ -1,5 +1,5 @@
-// Tailor has no generation id at export time (a pipeline run exposes none), so the
-// save boundary must receive the request ONLY — never a job url standing in for an id.
+// The save boundary gets the run detail's generation id (never a job url standing in
+// for one); an old run with no id passes the request only.
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 
@@ -13,7 +13,7 @@ vi.mock('@ajh/ui', () => ({ useNotification: () => ({ error: vi.fn() }) }));
 
 describe('useTailorOutputActions — generation id at the save boundary', () => {
   it.each(['pdf', 'docx'] as const)(
-    '%s export calls exportAndSave with the request only',
+    '%s export passes the generation id to exportAndSave',
     async (fmt) => {
       const exportAndSave = vi.fn().mockResolvedValue(`/out/file.${fmt}`);
       _registerClient(createMockClient({ documents: { exportAndSave } }));
@@ -25,11 +25,29 @@ describe('useTailorOutputActions — generation id at the save boundary', () => 
           market: 'intl',
           templateId: 'classic',
           atsMode: false,
+          generationId: 'gen-1',
         })
       );
       await act(() => result.current.exportAs(fmt));
       expect(exportAndSave).toHaveBeenCalledTimes(1);
-      expect(exportAndSave.mock.calls[0]).toHaveLength(1);
+      expect(exportAndSave.mock.calls[0]?.[1]).toBe('gen-1');
     }
   );
+
+  it('passes the request only when the run has no generation id', async () => {
+    const exportAndSave = vi.fn().mockResolvedValue('/out/file.pdf');
+    _registerClient(createMockClient({ documents: { exportAndSave } }));
+    const { result } = renderHook(() =>
+      useTailorOutputActions({
+        output: 'text',
+        activeOut: 'resume',
+        meta: null,
+        market: 'intl',
+        templateId: 'classic',
+        atsMode: false,
+      })
+    );
+    await act(() => result.current.exportAs('pdf'));
+    expect(exportAndSave.mock.calls[0]).toHaveLength(1);
+  });
 });

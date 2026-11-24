@@ -476,6 +476,7 @@ export function useTailorPipeline({
       atsMode,
       accent,
       letterLayoutId,
+      generationId: session.detail?.generationId,
     }
   );
 

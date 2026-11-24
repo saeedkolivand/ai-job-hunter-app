@@ -208,6 +208,10 @@ pub(super) fn detail(app: &AppHandle, row: &RunRow) -> Value {
                 .map(|r| r.resume_text.clone())
                 .unwrap_or_default()),
         );
+        // Omitted (not null) when the job has no aggregate row yet.
+        if let Some(r) = record.as_ref() {
+            object.insert("generationId".to_string(), json!(r.id));
+        }
         object.insert(
             "report".to_string(),
             record
