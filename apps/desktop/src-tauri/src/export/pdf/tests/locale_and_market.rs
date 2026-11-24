@@ -105,3 +105,75 @@ fn test_generate_pdf_cover_letter_french_salutation() {
     let bytes = generate_pdf(&request).expect("French cover letter renders");
     assert!(!bytes.is_empty());
 }
+
+/// Every market id `resolveMarket` can return (values of `COUNTRY_TO_MARKET` /
+/// `LANGUAGE_TO_MARKET` plus the `intl` fallback in
+/// `packages/prompts/src/locale/market.ts`) must export. Regression: `intl`
+/// leaked into Typst's `#set text(lang: ..)` via `target_lang()` and failed the
+/// render (#1552). Keep in sync with that TS source.
+#[test]
+fn every_resolve_market_id_exports_a_resume_and_a_cover_letter() {
+    const MARKETS: &[&str] = &[
+        "intl", "us", "uk", "de", "at", "ch", "fr", "es", "it", "pt", "br", "tr", "ru", "cn", "jp",
+        "kr",
+    ];
+    for market in MARKETS {
+        for document_type in [DocumentType::Resume, DocumentType::CoverLetter] {
+            let request = ExportRequest {
+                text: "Jane Doe
+jane@example.com
+
+EXPERIENCE
+Acme  2020 - Present
+Did things"
+                    .to_string(),
+                format: ExportFormat::Pdf,
+                document_type,
+                template_id: TemplateId::SwissMinimal,
+                meta: None,
+                ats_mode: false,
+                locale: Some((*market).to_string()),
+                contact: None,
+                accent: None,
+                letter_layout: LetterLayout::Classic,
+            };
+            assert!(
+                generate_pdf(&request).is_ok(),
+                "market `{market}` ({document_type:?}) must export"
+            );
+        }
+    }
+}
+
+/// A market id is not a language: `uk` must not become Ukrainian, `br` Breton.
+#[test]
+fn target_lang_maps_market_ids_to_their_language() {
+    let lang = |locale: &str| {
+        ExportRequest {
+            text: String::new(),
+            format: ExportFormat::Pdf,
+            document_type: DocumentType::Resume,
+            template_id: TemplateId::SwissMinimal,
+            meta: None,
+            ats_mode: false,
+            locale: Some(locale.to_string()),
+            contact: None,
+            accent: None,
+            letter_layout: LetterLayout::Classic,
+        }
+        .target_lang()
+    };
+    for (market, expected) in [
+        ("intl", "en"),
+        ("uk", "en"),
+        ("us", "en"),
+        ("ch", "de"),
+        ("br", "pt"),
+        ("jp", "ja"),
+        ("de", "de"),
+        ("fr", "fr"),
+        ("de-DE", "de"),
+    ] {
+        assert_eq!(lang(market), expected, "market `{market}`");
+    }
+}

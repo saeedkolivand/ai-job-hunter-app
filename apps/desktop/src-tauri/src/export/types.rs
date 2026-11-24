@@ -312,15 +312,42 @@ impl ExportRequest {
     }
 
     /// Language the document is written in (drives the localized header location).
-    /// Falls back to the request locale, then `en`.
+    /// Falls back to the request locale, then `en`. The locale is a *market* id
+    /// (see `resolveMarket` in `packages/prompts/src/locale/market.ts`), not a
+    /// language: country-coded markets map to their language (`uk` is English,
+    /// not Ukrainian), and anything that is not a 2/3-letter code (`intl`)
+    /// resolves to `en` instead of failing Typst's `lang` (#1552).
     pub fn target_lang(&self) -> String {
-        self.meta
+        let explicit = self
+            .meta
             .as_ref()
             .and_then(|m| m.target_language.as_deref())
-            .filter(|s| !s.is_empty())
-            .or(self.locale.as_deref())
-            .unwrap_or("en")
-            .to_string()
+            .filter(|s| !s.is_empty());
+        let raw = explicit.or(self.locale.as_deref()).unwrap_or("en");
+        let token = raw
+            .split(['-', '_'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        if explicit.is_none() {
+            let lang = match token.as_str() {
+                "us" | "uk" | "intl" => "en",
+                "at" | "ch" => "de",
+                "br" => "pt",
+                "cn" => "zh",
+                "jp" => "ja",
+                "kr" => "ko",
+                _ => "",
+            };
+            if !lang.is_empty() {
+                return lang.to_string();
+            }
+        }
+        if (2..=3).contains(&token.len()) && token.bytes().all(|b| b.is_ascii_alphabetic()) {
+            token
+        } else {
+            "en".to_string()
+        }
     }
 }
 
