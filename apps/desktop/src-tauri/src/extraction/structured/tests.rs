@@ -164,3 +164,25 @@ fn designed_pdf_header_yields_name_location_and_a_projects_section() {
     );
     assert!(!sr.review_required, "warnings: {:?}", sr.warnings);
 }
+
+#[test]
+fn a_kerned_email_and_digit_spaced_phone_are_rejoined() {
+    let text = "Jane Doe\n\njane0 @example.com  +3 1 6 1 2 3 4 5 6 7 8\n\nEXPERIENCE\nAcme\n- x";
+    let sr = structure(&extracted(text, vec![]));
+    assert_eq!(
+        sr.email.map(|e| e.value).as_deref(),
+        Some("jane0@example.com")
+    );
+    assert_eq!(sr.phone.map(|p| p.value).as_deref(), Some("+31612345678"));
+    assert!(
+        !sr.warnings.iter().any(|w| w.contains("email")),
+        "{:?}",
+        sr.warnings
+    );
+    // A normally grouped number is left as written.
+    let grouped = structure(&extracted("Jane Doe\n+31 6 1234 5678\n", vec![]));
+    assert_eq!(
+        grouped.phone.map(|p| p.value).as_deref(),
+        Some("+31 6 1234 5678")
+    );
+}
