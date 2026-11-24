@@ -9,6 +9,7 @@ export const workspaceNamespaces = (): Pick<
   | 'dedup'
   | 'discovery'
   | 'contactProfile'
+  | 'portablePrefs'
   | 'github'
 > => ({
   applications: {
@@ -63,6 +64,12 @@ export const workspaceNamespaces = (): Pick<
     get: async () => ({}),
     set: async () => ({ success: true }),
     headerLine: async () => '',
+  },
+
+  portablePrefs: {
+    get: async () => ({ values: {}, migrated: true }),
+    set: async () => ({ success: true }),
+    migrate: async () => ({ values: {}, migrated: true }),
   },
 
   github: {

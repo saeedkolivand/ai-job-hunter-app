@@ -22,7 +22,7 @@ use crate::scraping::ScraperEngine;
 use crate::updater::UpdaterState;
 use crate::{
     ai_config, ai_generations, applications, contact_profile, dedup, discovered, documents,
-    email_watch, job_preferences, limits, referrals, spend,
+    email_watch, job_preferences, limits, portable_prefs, referrals, spend,
 };
 
 /// Register `opened` for factory reset under `label`, or collect the failure to
@@ -96,6 +96,14 @@ pub(super) fn manage_user_stores(app: &App, registry: &mut ResetRegistry, data_d
         "contact_profile",
         "contact profile store",
         contact_profile::ContactProfileStore::open(data_dir),
+    );
+    // The allowlisted portable settings that sync to other devices (#1433).
+    manage_opened(
+        app,
+        registry,
+        "portable_prefs",
+        "portable preferences store",
+        portable_prefs::PortablePrefsStore::open(data_dir),
     );
     // Backend-owned active AI provider store (task #16): the single source of
     // truth for generation routing (provider/model/base_url). Holds no

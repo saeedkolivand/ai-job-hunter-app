@@ -195,6 +195,16 @@ impl Ctx<'_> {
                 self.current.remove(&key);
                 report.applied += 1;
             }
+            // A conflict-free section merges what it received even when the
+            // record-level order says local wins; the merged record is then
+            // pushed (it differs from the baseline), so no per-key edit is lost.
+            (Decision::Ignore, Some(s))
+                if s.merges_received()
+                    && !env.deleted
+                    && env.schema_version <= s.schema_version() =>
+            {
+                s.upsert_record(&env.record_id, &env.payload)?;
+            }
             _ => {}
         }
         Ok(())

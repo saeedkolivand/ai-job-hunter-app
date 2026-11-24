@@ -72,6 +72,19 @@ struct AgentBestMatch {
     posted_at: Option<i64>,
     found_at: u64,
     applied: bool,
+    /// Exact-vs-related split (#1447), mirroring `BestMatchRow` so UI and agent agree.
+    #[serde(default)]
+    applied_exact: bool,
+    #[serde(default)]
+    applied_related: bool,
+    /// Verified availability of `url` (#1444) — same fields/values the UI reads. Closed/removed
+    /// rows never reach this list. `None` = never checked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    availability: Option<crate::scraping::availability::Availability>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    availability_checked_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    availability_source: Option<crate::scraping::availability::AvailabilityEvidence>,
     is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     trust: Option<AgentTrust>,

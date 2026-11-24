@@ -18,6 +18,12 @@ vi.mock('@ajh/translations', () => ({
 }));
 
 vi.mock('@ajh/ui', () => ({
+  Button: ({ children, onClick }: { children?: ReactNode; onClick?: () => void }) => (
+    <button type="button" onClick={onClick}>
+      {children}
+    </button>
+  ),
+  ConfirmModal: () => null,
   Dropdown: ({ 'aria-label': ariaLabel }: { 'aria-label'?: string }) => (
     <div role="group" aria-label={ariaLabel} />
   ),
@@ -33,6 +39,7 @@ vi.mock('@ajh/ui', () => ({
 
 vi.mock('lucide-react', () => ({
   ArrowDownWideNarrow: () => null,
+  RefreshCw: () => null,
   Sparkles: () => null,
 }));
 
@@ -50,6 +57,21 @@ vi.mock('@/components/job/BestMatchRow', () => ({
     <div data-testid="best-match-row">{match.key}</div>
   ),
   DismissedBestMatchRow: () => <div data-testid="dismissed-row" />,
+  UnavailableBestMatchRow: () => <div data-testid="unavailable-row" />,
+}));
+
+const mockHandlePrepare = vi.fn();
+vi.mock('@/features/best-matches/lib/use-best-match-availability', () => ({
+  useBestMatchAvailability: () => ({
+    checking: new Set<string>(),
+    warning: null,
+    dismissWarning: vi.fn(),
+    confirmPrepareAnyway: vi.fn(),
+    handleCheck: vi.fn(),
+    handlePrepare: mockHandlePrepare,
+    withVerdict: (m: AutopilotBestMatch) => m,
+    isUnavailable: () => false,
+  }),
 }));
 
 const mockHandleView = vi.fn();
@@ -71,6 +93,7 @@ vi.mock('@/hooks/use-best-match-actions', () => ({
 
 let mockBestMatchesData:
   { matches: AutopilotBestMatch[]; total: number; autopilotCount: number } | undefined;
+const mockRefetch = vi.fn();
 let mockBestMatchesLoading = false;
 let mockBestMatchesError = false;
 let mockAutopilots: Autopilot[] = [];
@@ -80,7 +103,8 @@ vi.mock('@/services', () => ({
     data: mockBestMatchesData,
     isLoading: mockBestMatchesLoading,
     isError: mockBestMatchesError,
-    refetch: vi.fn(),
+    isFetching: false,
+    refetch: mockRefetch,
   }),
   useAutopilots: () => ({ data: mockAutopilots }),
 }));
@@ -202,5 +226,36 @@ describe('BestMatchesPage — loading / error', () => {
 
     expect(screen.getByTestId('error-state')).toBeInTheDocument();
     mockBestMatchesError = false;
+  });
+});
+
+describe('BestMatchesPage — frozen batch (#1449)', () => {
+  it('shows backend-total counts so a reviewed page is never read as a fully vetted pool', () => {
+    mockBestMatchesData = { matches: [makeMatch()], total: 357, autopilotCount: 1 };
+    mockAutopilots = [makeAutopilot({ lastRunAt: Date.now() })];
+
+    render(<BestMatchesPage />);
+
+    expect(screen.getByText(/bestMatches\.counts.*"reviewed":0.*"left":357/)).toBeInTheDocument();
+    expect(screen.getByText('bestMatches.nextBatch')).toBeInTheDocument();
+  });
+
+  it('keeps the displayed batch when a background refetch returns different rows', () => {
+    mockBestMatchesData = {
+      matches: [makeMatch({ key: 'a' }), makeMatch({ key: 'b' })],
+      total: 2,
+      autopilotCount: 1,
+    };
+    mockAutopilots = [makeAutopilot({ lastRunAt: Date.now() })];
+    const { rerender } = render(<BestMatchesPage />);
+
+    mockBestMatchesData = {
+      matches: [makeMatch({ key: 'c' }), makeMatch({ key: 'b' })],
+      total: 2,
+      autopilotCount: 1,
+    };
+    rerender(<BestMatchesPage />);
+
+    expect(screen.getAllByTestId('best-match-row').map((r) => r.textContent)).toEqual(['a', 'b']);
   });
 });

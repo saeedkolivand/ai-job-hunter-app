@@ -232,6 +232,23 @@ fn contact_profile_store_reset_yields_default_empty_profile() {
     );
 }
 
+// Factory reset forgets the synced settings and keeps the migration done, so
+// the renderer's old storage is not copied back in.
+#[test]
+fn portable_prefs_reset_forgets_values_and_does_not_re_migrate() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = crate::portable_prefs::PortablePrefsStore::open(&dir.path().to_path_buf()).unwrap();
+    store
+        .set(
+            serde_json::json!({ "language": "de" }).as_object().unwrap(),
+            5,
+        )
+        .unwrap();
+    Resettable::reset(&store);
+    let (values, migrated) = store.values().unwrap();
+    assert!(values.is_empty() && migrated);
+}
+
 // C3 — Registry completeness: every label that `privacy_reset_app` must wipe
 // is registered. The expected set now comes from the shared
 // `MANAGE_RESETTABLE_LABELS` const (the single source of truth), and
@@ -259,6 +276,7 @@ fn reset_registry_expected_labels_match_lib_rs_setup() {
     reg.register::<ApplicationStore>("applications");
     reg.register::<JobPreferencesStore>("job_preferences");
     reg.register::<ContactProfileStore>("contact_profile");
+    reg.register::<crate::portable_prefs::PortablePrefsStore>("portable_prefs");
     reg.register::<AiConfigStore>("ai_provider_config");
     reg.register::<ReferralStore>("referrals");
     reg.register::<Mutex<JobTracker>>("job_tracker");

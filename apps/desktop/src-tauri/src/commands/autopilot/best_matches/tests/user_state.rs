@@ -145,6 +145,16 @@ fn mark_applied_matches_a_non_canonical_board_copy() {
         matches[0].applied,
         "applied via a non-canonical cluster member still marks the row applied"
     );
+    assert!(
+        matches[0].applied_related && !matches[0].applied_exact,
+        "an application on another member is `related`, never `exact`"
+    );
+
+    let exact: HashSet<String> = [crate::applications::normalize_job_url(&matches[0].url)]
+        .into_iter()
+        .collect();
+    mark_applied(&mut matches, &exact);
+    assert!(matches[0].applied && matches[0].applied_exact && !matches[0].applied_related);
 }
 
 #[test]

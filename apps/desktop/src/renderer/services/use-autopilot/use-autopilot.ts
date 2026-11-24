@@ -147,6 +147,20 @@ export const useDismissIdentityReview = () => {
   });
 };
 
+/**
+ * Verify one posting's availability on demand (#1444). The verdict is persisted
+ * server-side per exact url, so Best Matches / the agent read it back; this hook
+ * only triggers the check and refreshes the cached lists.
+ */
+export const useCheckAvailability = () => {
+  const api = useAppClient();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (req: { url: string }) => api.autopilot.checkAvailability(req),
+    onSuccess: () => qc.invalidateQueries({ queryKey: keys.autopilot.all }),
+  });
+};
+
 export const useAutopilotStepEvents = (onStep?: (event: AutopilotStepEvent) => void) => {
   const api = useAppClient();
   useEffect(() => {

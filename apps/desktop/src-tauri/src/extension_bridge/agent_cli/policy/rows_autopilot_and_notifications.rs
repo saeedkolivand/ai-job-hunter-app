@@ -75,6 +75,12 @@ pub(super) const AUTOPILOT_AND_NOTIFICATIONS: &[PolicyEntry] = &[
             "releases a safety hold the user must review themselves (the found job's url now leads to a different advert) — an agent clearing it would defeat the review",
         ),
     },
+    PolicyEntry {
+        path: "commands::autopilot::autopilot_check_availability",
+        effect: Effect::NotExposed(
+            "makes an outbound request to a third-party posting url on the user's own click; agents read the persisted result through best-matches instead",
+        ),
+    },
     // commands/ai_generations.rs
     PolicyEntry {
         path: "commands::ai_generations::ai_generations_list",

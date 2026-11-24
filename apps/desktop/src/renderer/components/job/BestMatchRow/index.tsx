@@ -1,4 +1,4 @@
-import { Bookmark, ExternalLink, Sparkles, Wand2, X } from 'lucide-react';
+import { Bookmark, ExternalLink, ShieldCheck, Sparkles, Wand2, X } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 
 import type { AutopilotBestMatch, AutopilotBestMatchSource } from '@ajh/shared';
@@ -14,6 +14,8 @@ import { formatSalaryRange } from '@/lib/format-salary';
 import { MatchBand, matchBandDescriptionKey, scoreTier } from '@/lib/match-band';
 import { TrustBadge } from '@/lib/trust-badge';
 import { useSessionStore } from '@/store/session-store';
+
+import { BestMatchStatusChips } from './StatusChips';
 
 /**
  * Which score scale a row's number is on — mirrors `AutopilotCard`'s own
@@ -45,6 +47,10 @@ export interface BestMatchRowProps {
   onSave: (match: AutopilotBestMatch) => void;
   onApply: (match: AutopilotBestMatch) => void;
   onDismiss: (match: AutopilotBestMatch) => void;
+  /** On-demand availability check (#1444); the control is hidden when omitted. */
+  onCheckAvailability?: (match: AutopilotBestMatch) => void;
+  /** An availability check for this row is in flight. */
+  checking?: boolean;
 }
 
 /**
@@ -67,6 +73,8 @@ export function BestMatchRow({
   onSave,
   onApply,
   onDismiss,
+  onCheckAvailability,
+  checking = false,
 }: BestMatchRowProps) {
   const { t } = useTranslation();
   const formatRelativeTime = useFormatRelativeTime(t);
@@ -157,6 +165,17 @@ export function BestMatchRow({
         >
           <Bookmark size={10} />
         </Button>
+        {onCheckAvailability && (
+          <Button
+            onClick={() => onCheckAvailability(match)}
+            disabled={checking}
+            title={t('bestMatches.row.checkAvailability')}
+            aria-label={t('bestMatches.row.checkAvailability')}
+            className="flex shrink-0 items-center gap-1 rounded-lg border-transparent bg-muted px-2 py-1 text-[10px] font-medium text-foreground/60 transition-colors hover:text-foreground/85 h-auto"
+          >
+            <ShieldCheck size={10} />
+          </Button>
+        )}
         <Button
           onClick={() => onApply(match)}
           title={t('bestMatches.row.apply')}
@@ -173,6 +192,12 @@ export function BestMatchRow({
           <X size={11} />
         </Button>
       </div>
+
+      {!compact && (
+        <div className="flex flex-wrap items-center gap-1.5 pl-0.5">
+          <BestMatchStatusChips match={match} />
+        </div>
+      )}
 
       {(hasClusterOrAgency || match.sources.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 pl-0.5">
@@ -228,6 +253,19 @@ export function BestMatchRow({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Placeholder for a row whose posting was just verified closed/removed (#1444): it stays in
+ * the frozen batch for this visit so nothing shifts, but no longer offers any action.
+ */
+export function UnavailableBestMatchRow({ title }: { title: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-[var(--border-clear)] bg-card px-3.5 py-3 text-[10px] text-foreground/40">
+      <span>{t('bestMatches.row.unavailable', { title })}</span>
     </div>
   );
 }

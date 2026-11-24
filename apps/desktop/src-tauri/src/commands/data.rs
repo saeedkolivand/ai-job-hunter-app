@@ -20,6 +20,7 @@ use crate::discovered::DiscoveredCompanyStore;
 use crate::documents::DocumentStore;
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::portable_prefs::PortablePrefsStore;
 use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionRecord, InteractionStore};
 use crate::referrals::ReferralStore;
@@ -75,6 +76,7 @@ const ARRAY_SECTIONS: &[&str] = &[
 const OBJECT_SECTIONS: &[&str] = &[
     "jobPreferences",
     "contactProfile",
+    "portablePreferences",
     "aiProviderConfig",
     "pipelineRuns",
 ];
@@ -138,6 +140,11 @@ pub(crate) fn build_bundle(app: &AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
         stores.insert(s.key().to_string(), s.export());
+    }
+    // The allowlisted portable settings (`portable_prefs`): no secrets, no
+    // per-device values. A failed read omits the section so a restore keeps them.
+    if let Some(s) = app.try_state::<PortablePrefsStore>() {
+        omit_on_error(&mut stores, s.key(), s.try_export(), "portable preferences");
     }
     // Active AI provider config (task #16). Holds NO secrets — API keys stay in the
     // OS keychain — so backing it up is safe; a factory reset clears it separately.
@@ -355,6 +362,9 @@ pub async fn data_import(app: AppHandle) -> Value {
     }
     if let Some(s) = app.try_state::<ContactProfileStore>() {
         import_into("contactProfile", s.inner());
+    }
+    if let Some(s) = app.try_state::<PortablePrefsStore>() {
+        import_into("portablePreferences", s.inner());
     }
     if let Some(s) = app.try_state::<AiConfigStore>() {
         import_into("aiProviderConfig", s.inner());

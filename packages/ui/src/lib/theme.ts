@@ -129,6 +129,14 @@ export function getResolvedScheme(scheme: ColorScheme): 'light' | 'dark' {
 
 let current: ThemePrefs = DEFAULT_THEME_PREFS;
 
+const appliedListeners = new Set<(prefs: ThemePrefs) => void>();
+
+/** Call `listener` after every `applyTheme` (the app mirrors the theme to the synced settings). */
+export function onThemeApplied(listener: (prefs: ThemePrefs) => void): () => void {
+  appliedListeners.add(listener);
+  return () => appliedListeners.delete(listener);
+}
+
 /** Apply theme preferences to the document root and persist them. */
 export function applyTheme(prefs: ThemePrefs): void {
   current = prefs;
@@ -158,6 +166,7 @@ export function applyTheme(prefs: ThemePrefs): void {
   } catch {
     /* ignore */
   }
+  for (const listener of appliedListeners) listener(prefs);
 }
 
 /**

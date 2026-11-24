@@ -1028,7 +1028,7 @@
         "disabling": "Wird ausgeschaltet…",
         "disableFailed": "Die Synchronisierung konnte nicht ausgeschaltet werden.",
         "disclosure": "Die Synchronisierung sendet alles, was eine App-Sicherung enthält — Bewerbungen und ihren Verlauf, Lebensläufe und andere Dokumente, KI-Generierungen, Ihr Kontaktprofil, Jobpräferenzen (einschließlich Ihrer Gehaltsvorstellung), KI-Anbieter-Einstellungen, Empfehlungen, Autopiloten und Nutzungsdaten — an den hier eingetragenen Server und an niemanden sonst. Passwörter, API-Schlüssel und das Sync-Token werden nie synchronisiert; das Token bleibt im Schlüsselbund Ihres Betriebssystems. Wer diesen Server betreibt, kann lesen, was er speichert. Nutzen Sie daher Ihren eigenen Server oder einen, dem Sie vertrauen.",
-        "scopeNote": "Lokale Spitznamen, Darstellung, Sprache, Ausgabeton, Denktiefe, Verfügbarkeit und Kündigungsfristen sind nicht enthalten. Wenn aktiviert, läuft die Synchronisierung bei geöffneter App: nach dem Start, alle 15 Minuten oder wenn Sie Jetzt synchronisieren wählen.",
+        "scopeNote": "Auch Ihre übertragbaren Einstellungen werden synchronisiert: Anzeigename, Sprache, Ausgabeton, Lebenslauf-Optionen, Angaben zu Starttermin, Kündigungsfrist und Remote-Arbeit, Prompt-Qualität, Denktiefe, zuletzt genutzte Orte und Darstellung. Leistung, lokale Modelleinstellungen, Autostart, Minimieren in den Infobereich und die Einwilligungsschalter (Logo-Abfrage, Indexierung, Erweiterungszugriff, E-Mail-Überwachung) bleiben auf jedem Gerät. Wenn aktiviert, läuft die Synchronisierung bei geöffneter App: nach dem Start, alle 15 Minuten oder wenn Sie Jetzt synchronisieren wählen.",
         "loading": "Sync-Status wird geprüft…",
         "loadFailed": "Der Sync-Status konnte nicht gelesen werden.",
         "retry": "Erneut versuchen"
@@ -2287,7 +2287,7 @@
         "title": "Wie sollen wir Ergebnisse filtern?",
         "subtitle": "Nur Jobs, die diese Filter bestehen, werden verarbeitet.",
         "matchScore": "Übereinstimmung",
-        "matchScoreHint": "Wie streng die Lebenslauf-Übereinstimmung sein muss",
+        "matchScoreHint": "Wie streng die Stichwortabdeckung sein muss (keine Prognose der Passung fürs Interview)",
         "matchLevel": {
           "any": "Beliebig",
           "anyDesc": "Kein Minimum",
@@ -2465,11 +2465,27 @@
       "salary": "Gehalt"
     },
     "truncated": "{{shown}} von {{total}} qualifizierenden Treffern werden angezeigt",
+    "counts": "{{reviewed}} bei diesem Besuch verworfen · {{left}} qualifizierende Treffer noch nicht geprüft",
+    "nextBatch": "Nächste Gruppe laden",
+    "refresh": "Liste aktualisieren",
+    "availability": {
+      "unverified": "Es konnte nicht geprüft werden, ob diese Anzeige noch offen ist.",
+      "closedTitle": "Diese Anzeige scheint geschlossen zu sein",
+      "closedDescription": "„{{title}}“ scheint keine Bewerbungen mehr anzunehmen. Trotzdem eine Bewerbung vorbereiten?",
+      "prepareAnyway": "Trotzdem vorbereiten"
+    },
     "salaryCaption": "{{count}} von {{total}} Zeilen nennen ein Gehalt — die meisten Boards tun das nicht",
     "row": {
-      "view": "Anzeigen",
+      "view": "Anzeige öffnen",
       "save": "Speichern",
-      "apply": "Bewerben",
+      "apply": "Bewerbung vorbereiten",
+      "checkAvailability": "Verfügbarkeit prüfen",
+      "appliedExact": "Beworben",
+      "appliedRelated": "Auf eine verwandte Anzeige beworben",
+      "availabilityOpen": "Offen · geprüft {{time}}",
+      "availabilityUnknown": "Nicht verifiziert · geprüft {{time}}",
+      "availabilityUnchecked": "Nicht geprüft",
+      "unavailable": "„{{title}}“ ist geschlossen oder entfernt und wird in Ihren Treffern ausgeblendet.",
       "dismiss": "Verwerfen",
       "dismissed": "Verworfen",
       "undo": "Rückgängig",
@@ -3089,7 +3105,7 @@
         },
         "bestMatches": {
           "q": "Was ist die Seite \"Beste Treffer\"?",
-          "a": "\"Beste Treffer\" finden Sie in der Seitenleiste unter \"Automatisierung\". Die Seite bündelt die gefundenen Jobs aus allen Autopiloten in einer Liste, fasst doppelte Anzeigen derselben Stelle zusammen und behält nur die Zeilen, die die Stufe \"Hoch\" erreichen — schwache Funde landen also nie dort. Sortieren Sie nach \"Score\", \"Neueste\" oder \"Gehalt\". Jede Zeile bietet \"Anzeigen\", \"Speichern\" und \"Bewerben\"; \"Verwerfen\" entfernt eine Zeile, die Sie nicht interessiert, und \"Rückgängig\" holt sie zurück."
+          "a": "\"Beste Treffer\" finden Sie in der Seitenleiste unter \"Automatisierung\". Die Seite bündelt die gefundenen Jobs aus allen Autopiloten in einer Liste, fasst doppelte Anzeigen derselben Stelle zusammen und behält nur die Zeilen, die die Stufe \"Hoch\" erreichen — schwache Funde landen also nie dort. Sortieren Sie nach \"Score\", \"Neueste\" oder \"Gehalt\". Jede Zeile bietet \"Anzeige öffnen\" (öffnet nur die Anzeige), \"Speichern\" und \"Bewerbung vorbereiten\" (legt einen Entwurf an, nichts wird abgeschickt); \"Verwerfen\" entfernt eine Zeile, die Sie nicht interessiert, und \"Rückgängig\" holt sie zurück."
         }
       },
       "documents": "Dokumente",
@@ -3596,6 +3612,7 @@
       "deleteAll": "Alles löschen",
       "appliedAgo": "Beworben {{when}}",
       "updatedAgo": "Aktualisiert {{when}}",
+      "withdrawnAgo": "Zurückgezogen {{when}}",
       "statusError": "Phase konnte nicht aktualisiert werden.",
       "addNoteHint": "Notiz hinzufügen?"
     },

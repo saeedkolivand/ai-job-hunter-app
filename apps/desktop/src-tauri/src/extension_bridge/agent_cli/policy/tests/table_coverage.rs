@@ -83,7 +83,8 @@ fn policy_table_row_count_is_pinned() {
     // 173 + 2 (issue #1515): `ai_search_settings`, `ai_set_search_settings`.
     // 175 + 1 (outcome insights): `insights_outcomes`.
     // 176 + 1 (ATS view): `export_ats_view`.
-    assert_eq!(POLICY.len(), 177);
+    // +1 (issue #1444): `autopilot_check_availability`.
+    assert_eq!(POLICY.len(), 181);
 }
 
 /// ADR-038 §1's core invariant: the policy table and `generate_handler!`
@@ -218,5 +219,5 @@ fn extraction_finds_known_paths_at_each_end_of_the_list() {
         "extraction must find the LAST registered command"
     );
     assert!(found.contains(&"commands::privacy::privacy_reset_app"));
-    assert_eq!(found.len(), 177);
+    assert_eq!(found.len(), 181);
 }

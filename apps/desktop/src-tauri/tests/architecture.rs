@@ -71,6 +71,9 @@ const L1: &[&str] = &[
     "credentials",
     "job_preferences",
     "contact_profile",
+    // Allowlisted settings that sync across devices (#1433): a single-row
+    // SQLite store like `contact_profile`; Tauri-free, no domain imports.
+    "portable_prefs",
     "ai_generations",
     "applications",
     "referrals",
@@ -550,6 +553,9 @@ const R3_ALLOW: &[&str] = &[
     // the `DataStore` surface) moved verbatim; the header/classify/conflict logic
     // that stayed behind holds no SQL.
     "contact_profile/store.rs",
+    // The persistence half of `portable_prefs` (single-row table + sync section);
+    // the allowlist and merge rules in `mod.rs` hold no SQL.
+    "portable_prefs/store.rs",
     "ai_config/mod.rs",
     // Same store, split for COHESION rather than for the LOC cap (unlike the
     // `documents`/`applications` splits above — `ai_config/mod.rs` has ample

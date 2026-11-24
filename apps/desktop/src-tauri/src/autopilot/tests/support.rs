@@ -162,6 +162,9 @@ pub(crate) fn found_job_full(url: &str, title: &str, company: &str, found_at: u6
         identity_review: None,
         identity_dismissed: None,
         ghost_signals: None,
+        availability: None,
+        availability_checked_at: None,
+        availability_source: None,
     }
 }
 

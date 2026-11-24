@@ -29,6 +29,7 @@ pub mod match_resume;
 pub mod menu;
 pub mod notifications;
 pub mod pipeline;
+pub mod portable_prefs;
 pub mod privacy;
 pub mod profile_import;
 pub mod referrals;

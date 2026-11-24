@@ -9,6 +9,7 @@ use crate::autopilot::tests::support::{
 };
 use crate::autopilot::AutopilotTarget;
 
+mod availability;
 mod merging;
 mod ordering;
 mod qualification;

@@ -22,6 +22,7 @@ use crate::notifications::NotificationStore;
 use crate::observability::sanitize_reason;
 use crate::pipeline::cache::KvCache;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::portable_prefs::PortablePrefsStore;
 use crate::postings::{InteractionStore, PostingsCache};
 use crate::referrals::ReferralStore;
 use crate::spend::SpendStore;
@@ -113,6 +114,15 @@ impl Resettable for ContactProfileStore {
         let _ = self.clear();
     }
 }
+impl Resettable for PortablePrefsStore {
+    fn reset(&self) {
+        // `Resettable::reset` is infallible for every store; changing that
+        // contract is out of scope, so a failed clear is at least logged.
+        if let Err(e) = self.clear() {
+            log::warn!("[reset] portable preferences not cleared: {}", e.code());
+        }
+    }
+}
 impl Resettable for AiConfigStore {
     fn reset(&self) {
         self.clear();
@@ -195,6 +205,7 @@ pub const MANAGE_RESETTABLE_LABELS: &[&str] = &[
     "applications",
     "job_preferences",
     "contact_profile",
+    "portable_prefs",
     "ai_provider_config",
     "referrals",
     "job_tracker",

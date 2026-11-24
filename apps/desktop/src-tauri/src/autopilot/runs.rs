@@ -302,4 +302,38 @@ impl AutopilotStore {
         }
         dismissed
     }
+
+    /// Record a verified availability on every found job whose url normalizes to
+    /// `normalized_url` (#1444) — the exact posting, across autopilots. A repost under another
+    /// url (new requisition id) is a different row and is never touched. Returns rows updated.
+    pub fn set_availability(
+        &self,
+        normalized_url: &str,
+        verdict: crate::scraping::availability::AvailabilityVerdict,
+        checked_at: u64,
+    ) -> usize {
+        let mut map = self.load();
+        let mut updated = 0;
+        for ap in map.values_mut() {
+            let mut changed = false;
+            for job in ap
+                .found_jobs
+                .iter_mut()
+                .filter(|j| crate::applications::normalize_job_url(&j.url) == normalized_url)
+            {
+                job.availability = Some(verdict.availability);
+                job.availability_checked_at = Some(checked_at);
+                job.availability_source = Some(verdict.evidence);
+                changed = true;
+                updated += 1;
+            }
+            if changed {
+                ap.updated_at = now_ms();
+            }
+        }
+        if updated > 0 {
+            self.save(map);
+        }
+        updated
+    }
 }

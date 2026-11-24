@@ -500,7 +500,30 @@ export interface AutopilotFoundJob {
    *  Absent on a record written before this field existed, or when the history
    *  could not be written. */
   ghostSignals?: AutopilotGhostSignals;
+  /** Last verified availability of THIS url (#1444), separate from the match score. Absent =
+   *  never checked (read as `unknown`). Not shared with a repost under another url. */
+  availability?: AutopilotAvailability;
+  /** Epoch ms of the check behind `availability`. */
+  availabilityCheckedAt?: number;
+  /** Evidence category behind `availability`. */
+  availabilitySource?: AutopilotAvailabilitySource;
 }
+
+/** Whether a posting still takes applications, as last verified. `closed`/`removed` are only
+ *  ever set on affirmative evidence; a blocked or failed check is `unknown`. */
+export type AutopilotAvailability = 'open' | 'closed' | 'removed' | 'unknown';
+
+/** Result of `autopilot.checkAvailability`. */
+export interface AutopilotAvailabilityCheck {
+  availability: AutopilotAvailability;
+  source: AutopilotAvailabilitySource;
+  /** Epoch ms the check ran. */
+  checkedAt: number;
+}
+
+/** Sanitized evidence category behind an availability verdict (never page text). */
+export type AutopilotAvailabilitySource =
+  'ok' | 'http_gone' | 'closed_marker' | 'blocked' | 'error';
 
 /** Ghost-job signals for one posting, keyed in the history by normalized
  *  company + title (not url), so a repost under a new url still matches. */

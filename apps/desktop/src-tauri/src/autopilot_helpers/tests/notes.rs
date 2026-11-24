@@ -173,6 +173,7 @@ fn stub_job(url: &str) -> FoundJob {
 async fn run_loop(env: &dyn NoteEnv, jobs: &mut [FoundJob], prior: &HashSet<String>) -> usize {
     run_notes_loop(
         env,
+        "r",
         "<candidate_resume>\nr\n</candidate_resume>",
         jobs,
         prior,
@@ -314,6 +315,7 @@ async fn cancellation_during_an_inflight_call_stops_immediately() {
 
     let generated = run_notes_loop(
         &HangingNoteEnv,
+        "r",
         "<candidate_resume>\nr\n</candidate_resume>",
         &mut jobs,
         &prior,

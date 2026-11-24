@@ -105,6 +105,7 @@ export const appNamespaces = (): Pick<
     takePendingFocus: () => Promise.resolve(null),
     bestMatches: async () => ({ matches: [], total: 0, autopilotCount: 0 }),
     dismissIdentityReview: async () => false,
+    checkAvailability: async () => ({ availability: 'unknown', source: 'error', checkedAt: 0 }),
   },
 
   menu: {

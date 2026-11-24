@@ -1,4 +1,5 @@
 pub mod ats_ref;
+pub mod availability;
 pub mod board_health;
 pub mod board_login;
 pub mod boards;

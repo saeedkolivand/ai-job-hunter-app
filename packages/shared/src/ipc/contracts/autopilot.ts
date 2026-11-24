@@ -1,6 +1,9 @@
 import type { AutopilotCreate, AutopilotUpdate } from '../../schemas/index.js';
 import type {
   Autopilot,
+  AutopilotAvailability,
+  AutopilotAvailabilityCheck,
+  AutopilotAvailabilitySource,
   AutopilotGhostSignals,
   AutopilotRunStatus,
   JobTrustAssessment,
@@ -114,6 +117,16 @@ export interface AutopilotContract {
    * Resolves `true` when a review was dismissed, `false` when none matched.
    */
   dismissIdentityReview(req: { autopilotId: string; url: string }): Promise<boolean>;
+
+  /**
+   * Verify on demand whether the posting at `url` still accepts applications (#1444) and
+   * persist the verdict on every found job at that exact url (a repost under another url is a
+   * different row and is untouched). One guarded fetch through the shared scrape budget; no
+   * queue, no background crawl, nothing deleted. A login wall, captcha, 403/429, timeout or
+   * network failure resolves `unknown`, never `closed`. Rows verified `closed`/`removed` leave
+   * Best Matches.
+   */
+  checkAvailability(req: { url: string }): Promise<AutopilotAvailabilityCheck>;
 }
 
 export interface AutopilotStepEvent {
@@ -176,7 +189,17 @@ export interface AutopilotBestMatch {
   postedAt?: number;
   /** EARLIEST discovery across every source that surfaced this job. */
   foundAt: number;
+  /** Any member of the cluster has an Application (`appliedExact || appliedRelated`). */
   applied?: boolean;
+  /** This row's own url has an Application (#1447). */
+  appliedExact?: boolean;
+  /** Only ANOTHER member of the cluster has an Application, not this url (#1447). */
+  appliedRelated?: boolean;
+  /** Verified availability of the row's url (#1444). Closed/removed rows are not listed, so a
+   *  present value is `open` or `unknown`; absent = never checked. */
+  availability?: AutopilotAvailability;
+  availabilityCheckedAt?: number;
+  availabilitySource?: AutopilotAvailabilitySource;
   isAgency?: boolean;
   trust?: JobTrustAssessment;
   /** The canonical member's advisory ghost-job signals; absent when unknown. */
@@ -215,4 +238,5 @@ export const AUTOPILOT_CHANNELS = {
   resume: 'autopilot:resume',
   bestMatches: 'autopilot:bestMatches',
   dismissIdentityReview: 'autopilot:dismissIdentityReview',
+  checkAvailability: 'autopilot:checkAvailability',
 } as const;

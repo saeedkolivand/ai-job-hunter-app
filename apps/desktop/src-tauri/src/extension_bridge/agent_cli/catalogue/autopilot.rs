@@ -11,6 +11,13 @@ pub(super) const ENTRIES: &[CatalogueEntry] = &[
         args: &[],
     },
     CatalogueEntry {
+        command: "autopilot_check_availability",
+        description: "Verify on demand whether the posting at `url` still accepts applications (#1444) and persist the verdict on every found job at that exact url (a repost under another url is a different row and is untouched).",
+        args: &[
+            CatalogueArg { name: "url", required: true, fields: None },
+        ],
+    },
+    CatalogueEntry {
         command: "autopilot_create",
         description: "Create a scheduled job-search autopilot. Body `{\"req\": {...}}` (JSON Schema in `args[].schema`): required `name`, `target` ({boards[], query, optional location/countryCode/workTypes/pages/dateFilter}), `filter` ({minMatchScore 0-100, optional keywords/excludeKeywords}) and `schedule` (manual|hourly|daily|twice_daily); `scheduleHour`/`scheduleMinute` set the clock time. `resumeText` is the text runs score against; leave it out or blank and each run uses the default document's text instead, and the reply carries a `warning` when neither exists. `dateFilter` outside its allowed values is refused. The reply is the saved record plus the optional `warning`.",
         args: &[
