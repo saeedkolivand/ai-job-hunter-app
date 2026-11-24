@@ -990,6 +990,7 @@
       "resetAppConfirmDescription": "Dadurch werden Sie von allen Konten abgemeldet, alle gespeicherten Daten und der Job-Verlauf gelöscht sowie alle Einstellungen zurückgesetzt. Jeder gekoppelte Browser wird getrennt, Sie müssen die Erweiterung also erneut koppeln. Sie werden zum Willkommensbildschirm weitergeleitet. Dies kann nicht rückgängig gemacht werden.",
       "resetAppConfirm": "Alles zurücksetzen",
       "resetAppPartial": "App zurückgesetzt, aber einige Board-Anmeldesitzungen konnten nicht vollständig gelöscht werden.",
+      "resetAppIncomplete": "App zurückgesetzt, aber einige Daten konnten nicht gelöscht werden. Bitte wiederhole das Zurücksetzen oder starte die App neu.",
       "somethingWentWrong": "Etwas ist schiefgelaufen.",
       "signedOutSuccess": "Von allen Konten abgemeldet. Neuverbindung über Einstellungen → Konten.",
       "historyClearedSuccess": "Interaktionsverlauf gelöscht.",
@@ -2016,6 +2017,17 @@
       "dismissFailed": "Die Prüfung konnte nicht verworfen werden. Versuche es erneut."
     },
     "aiNote": "KI-Notiz",
+    "fit": {
+      "category": {
+        "supportedFit": "Passt belegt",
+        "stretch": "Stretch",
+        "explicitGap": "Klare Lücke",
+        "unknown": "Unklar"
+      },
+      "gapsLabel": "Nicht erfüllte Muss-Anforderung",
+      "verifyLabel": "Zu prüfen (Muss-Anforderung)",
+      "stale": "Möglicherweise veraltet: Dein Lebenslauf oder die Anzeige hat sich seit dieser Notiz geändert."
+    },
     "provisionalScoreHint": "Aus begrenztem Text geschätzt — öffnen Sie den Job für den genauen Match-Score.",
     "scoreLabel": {
       "coverage": "Stichwortabdeckung %",

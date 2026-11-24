@@ -177,7 +177,7 @@ fn clear_all_empties_the_help_vector_cache_too() {
         .upsert_posting_vector("job-1", "hash-j", &ev(vec![1.0]))
         .unwrap();
 
-    store.clear_all();
+    store.clear_all().unwrap();
 
     assert!(
         store.get_help_vector("hash-a", &active).is_none(),

@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 mod cap;
 mod corrupt;
+mod fit;
 mod found_jobs_db;
 mod identity;
 mod merge;
@@ -21,6 +22,9 @@ mod relax;
 mod runs;
 mod sync_section;
 
+pub use fit::{
+    needs_regeneration, notes_basis, notes_stale, FitCategory, NoteFitView, NoteSnapshot,
+};
 pub use identity::{IdentityReview, ResolveWrite, ResolvedIdentity};
 pub(crate) use merge::found_job_cluster_inputs;
 pub(crate) use model::derive_run_status;

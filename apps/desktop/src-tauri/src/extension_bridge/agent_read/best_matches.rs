@@ -32,7 +32,7 @@ struct AgentBestMatchSource {
 /// `best-matches` resource's per-row payload — projected off
 /// `commands::autopilot::best_matches::BestMatchRow`'s wire (JSON) shape.
 /// Excludes `key` (an opaque cluster id — see the module doc),
-/// `assistantNotes` (forbidden), and `clusterMembers` (grouping detail with
+/// `assistantNotes` (forbidden; its structured fit is projected instead), and `clusterMembers` (grouping detail with
 /// no meaning off this surface, same call as `AgentJob`'s).
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -90,6 +90,9 @@ struct AgentBestMatch {
     trust: Option<AgentTrust>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ghost_signals: Option<AgentGhostSignals>,
+    /// Structured fit beside the (forbidden) AI note (#1446).
+    #[serde(flatten)]
+    fit: super::job::AgentFit,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     sources: Vec<AgentBestMatchSource>,
 }
@@ -184,6 +187,20 @@ pub(super) fn fence_posting_display_fields(value: &mut Value) {
             let fenced =
                 crate::prompt_fence::fenced("job_posting", s, crate::prompt_fence::JOB_CAP);
             value[field] = json!(fenced);
+        }
+    }
+    // The must-have lists quote the ad, so they are fenced like the posting's own text.
+    for field in ["mandatoryGaps", "toVerify"] {
+        if let Some(items) = value.get_mut(field).and_then(Value::as_array_mut) {
+            for item in items.iter_mut() {
+                if let Some(s) = item.as_str() {
+                    *item = json!(crate::prompt_fence::fenced(
+                        "job_posting",
+                        s,
+                        crate::prompt_fence::JOB_CAP
+                    ));
+                }
+            }
         }
     }
 }

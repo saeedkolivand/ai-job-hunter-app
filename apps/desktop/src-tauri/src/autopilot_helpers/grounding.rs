@@ -3,11 +3,12 @@
 //! Three pure pieces, no model involved:
 //! * [`classify_tier`] — is an ad line a must-have, a preference, or unspecified (EN/DE/IT cues);
 //! * [`language_levels`] — the `(language, level)` pairs a text asserts (CEFR or fluency words);
-//! * [`ground_note`] — drops note sentences that claim a candidate language level the résumé does
-//!   not evidence, and appends the ad's unmet must-haves. Unknown stays unknown: a requirement
-//!   the résumé is silent on is listed as "to verify", never as a gap.
+//! * [`apply_note`] — drops note sentences that claim a candidate language level the résumé does
+//!   not evidence and stores the ad's unmet must-haves as structured fields (slice 2). Unknown
+//!   stays unknown: a requirement the résumé is silent on is "to verify", never a gap.
 
 mod language;
+use crate::autopilot::{notes_basis, FitCategory, FoundJob};
 use language::FLUENT;
 pub(crate) use language::{evidenced_levels, language_levels, Level};
 
@@ -159,6 +160,25 @@ pub(crate) struct MandatoryReport {
     pub(crate) gaps: Vec<String>,
     /// Must-haves the résumé cannot confirm either way (unknown, not a gap).
     pub(crate) to_verify: Vec<String>,
+    /// A preferred (non-mandatory) language demand the résumé does not meet or confirm.
+    pub(crate) preferred_unmet: bool,
+    /// The ad states at least one must-have or preference we could recognise.
+    pub(crate) has_requirements: bool,
+}
+
+impl MandatoryReport {
+    /// The deterministic fit category (rule on [`FitCategory`]); never reads the keyword score.
+    pub(crate) fn category(&self, resume: &str) -> FitCategory {
+        if !self.gaps.is_empty() {
+            FitCategory::ExplicitGap
+        } else if resume.trim().is_empty() || !self.has_requirements || !self.to_verify.is_empty() {
+            FitCategory::Unknown
+        } else if self.preferred_unmet {
+            FitCategory::Stretch
+        } else {
+            FitCategory::SupportedFit
+        }
+    }
 }
 
 /// Char cap on a requirement line when shown back to the user.
@@ -167,25 +187,35 @@ const REQ_DISPLAY_CHARS: usize = 160;
 pub(crate) fn mandatory_report(resume: &str, description: &str) -> MandatoryReport {
     let evidence = evidenced_levels(resume);
     let mut report = MandatoryReport::default();
-    for req in classify_requirements(description)
-        .into_iter()
-        .filter(|r| r.tier == Tier::Mandatory)
-    {
+    let requirements = classify_requirements(description);
+    report.has_requirements = !requirements.is_empty();
+    for req in requirements {
+        if req.tier == Tier::Preferred {
+            report.preferred_unmet |= language_levels(&req.text)
+                .iter()
+                .any(|(lang, need)| evidence.get(lang).is_none_or(|have| have < need));
+        }
+        if req.tier != Tier::Mandatory {
+            continue;
+        }
         let lower = req.text.to_lowercase();
-        if years_required(&lower).is_some() {
+        // An explicit must-have cue makes every stated level binding; the fluency threshold only
+        // decides which levels count when mandatory status was merely inferred.
+        let explicit = has_any(&lower, MANDATORY_CUES);
+        let levels: Vec<_> = language_levels(&req.text)
+            .into_iter()
+            .filter(|(_, l)| explicit || *l >= FLUENT)
+            .collect();
+        // Recognition is not evidence: a must-have we cannot evaluate against the résumé (years
+        // are unchecked, no language level) stays "to verify" so it never reads as a supported fit.
+        if years_required(&lower).is_some() || levels.is_empty() {
             // Analysis ran on the full line; only the displayed copy is truncated.
             let shown: String = req.text.chars().take(REQ_DISPLAY_CHARS).collect();
             if !report.to_verify.contains(&shown) {
                 report.to_verify.push(shown);
             }
         }
-        // An explicit must-have cue makes every stated level binding; the fluency threshold only
-        // decides which levels count when mandatory status was merely inferred.
-        let explicit = has_any(&lower, MANDATORY_CUES);
-        for (lang, need) in language_levels(&req.text)
-            .into_iter()
-            .filter(|(_, l)| explicit || *l >= FLUENT)
-        {
+        for (lang, need) in levels {
             match evidence.get(lang) {
                 Some(have) if *have < need => {
                     let gap = format!(
@@ -275,60 +305,32 @@ fn grounded_prose(note: &str, resume: &str) -> String {
         .join(" ")
 }
 
-/// The ad's unmet / to-verify must-haves as appended note text ("" when there are none).
-fn report_suffix(resume: &str, description: &str) -> String {
-    let report = mandatory_report(resume, description);
-    [
-        ("Unmet must-have", &report.gaps),
-        ("To verify (must-have)", &report.to_verify),
-    ]
-    .iter()
-    .filter(|(_, items)| !items.is_empty())
-    .map(|(label, items)| format!("{label}: {}.", items.join("; ")))
-    .collect::<Vec<_>>()
-    .join(" ")
-}
-
-fn join_note(prose: &str, suffix: &str) -> String {
-    match (prose.is_empty(), suffix.is_empty()) {
-        (_, true) => prose.to_string(),
-        (true, false) => suffix.to_string(),
-        _ => format!("{prose} {suffix}"),
-    }
-}
-
-/// Drop every sentence that claims a fluent/native language the résumé does not evidence at that
-/// level, then append the ad's unmet must-haves. Never adds a positive claim.
-#[cfg(test)]
-pub(crate) fn ground_note(note: &str, resume: &str, description: &str) -> String {
-    join_note(
-        &grounded_prose(note, resume),
-        &report_suffix(resume, description),
-    )
-}
-
 /// Char cap on a stored note — defense-in-depth on output size: the system prompt asks for 2–4
 /// sentences and the provider layer exposes no max-tokens knob.
 const NOTE_CAP: usize = 800;
 
-/// A raw completion → the stored note: grounded, with prose + appended must-have report together
-/// within [`NOTE_CAP`] chars. The report (the warnings) is reserved first; the prose gives way.
-pub(crate) fn finish_note(text: &str, resume: &str, description: Option<&str>) -> String {
-    let suffix: String = report_suffix(resume, description.unwrap_or(""))
-        .chars()
-        .take(NOTE_CAP)
-        .collect();
-    let reserved = if suffix.is_empty() {
-        0
-    } else {
-        suffix.chars().count() + 1
-    };
+/// A raw completion → the stored prose: capped, then stripped of every sentence that claims a
+/// language level the résumé does not evidence. Never adds a claim; the gaps are structured.
+pub(crate) fn finish_note(text: &str, resume: &str) -> String {
     let capped: String = text.trim().chars().take(NOTE_CAP).collect();
-    let prose: String = grounded_prose(&capped, resume)
-        .chars()
-        .take(NOTE_CAP - reserved.min(NOTE_CAP))
-        .collect();
-    join_note(prose.trim_end(), &suffix)
+    grounded_prose(&capped, resume).trim_end().to_string()
+}
+
+/// Store a completion on the job with its structured fit and version stamp. `false` (job left
+/// untouched) when nothing grounded is left of the note.
+pub(crate) fn apply_note(job: &mut FoundJob, text: &str, resume: &str) -> bool {
+    let note = finish_note(text, resume);
+    if note.is_empty() {
+        return false;
+    }
+    let report = mandatory_report(resume, job.description.as_deref().unwrap_or(""));
+    job.fit_category = Some(report.category(resume));
+    job.assistant_notes = Some(note);
+    job.mandatory_gaps = report.gaps;
+    job.to_verify = report.to_verify;
+    job.notes_basis = Some(notes_basis(resume, job.description.as_deref()));
+    job.notes_stale = false;
+    true
 }
 
 #[cfg(test)]

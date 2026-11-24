@@ -16,7 +16,14 @@ use super::super::*;
 async fn scrape_boards_rejects_empty_boards_list() {
     let engine = ScraperEngine::new();
     let result = engine
-        .scrape_boards(&[], fake_input(5), "job-empty".to_string(), None, None)
+        .scrape_boards(
+            &[],
+            fake_input(5),
+            "job-empty".to_string(),
+            None,
+            None,
+            None,
+        )
         .await;
     assert!(result.is_err(), "empty boards list must return Err");
     assert!(

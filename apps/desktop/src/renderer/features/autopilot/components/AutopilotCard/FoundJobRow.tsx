@@ -1,4 +1,4 @@
-import { Check, ExternalLink, Eye, Sparkles, TriangleAlert, Wand2 } from 'lucide-react';
+import { Check, ExternalLink, Eye, TriangleAlert, Wand2 } from 'lucide-react';
 
 import type { AutopilotFoundJob } from '@ajh/shared';
 import { TEST_IDS } from '@ajh/test-ids';
@@ -6,6 +6,7 @@ import { useTranslation } from '@ajh/translations';
 import { Button, cn, Tag } from '@ajh/ui';
 
 import { AgencyChip } from '@/components/job/AgencyChip';
+import { AiNote } from '@/components/job/AiNote';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { GhostBadge } from '@/components/job/GhostBadge';
 import { useFormatRelativeTime } from '@/hooks/use-format-relative-time';
@@ -221,26 +222,7 @@ export function FoundJobRow({
           the same "AI-generated, not fact" cue as the icon-only Sparkles gives
           screen readers. Clamped to 2 lines — a verbose note gets a `title`
           tooltip for the full text instead of dominating the compact row. */}
-      {job.assistantNotes && (
-        <div
-          role="note"
-          aria-label={t('autopilot.aiNote')}
-          className="ml-0.5 flex items-start gap-1.5 rounded-lg border border-brand/15 bg-brand/5 px-2.5 py-1.5"
-        >
-          <Sparkles size={10} className="mt-0.5 shrink-0 text-brand-soft" />
-          <div className="min-w-0 flex-1">
-            <span className="block text-fine-print font-semibold uppercase tracking-wide text-brand-soft">
-              {t('autopilot.aiNote')}
-            </span>
-            <p
-              title={job.assistantNotes}
-              className="line-clamp-2 text-[10px] leading-relaxed text-foreground/70"
-            >
-              {job.assistantNotes}
-            </p>
-          </div>
-        </div>
-      )}
+      {job.assistantNotes && <AiNote notes={job.assistantNotes} fit={job} />}
     </div>
   );
 }

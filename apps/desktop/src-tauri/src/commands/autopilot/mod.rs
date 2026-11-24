@@ -77,6 +77,7 @@ fn enrich_applied(app: &AppHandle, list: &mut [crate::autopilot::Autopilot]) {
 pub fn autopilot_list(app: AppHandle) -> Value {
     let mut list = store(&app).lock().list();
     enrich_applied(&app, &mut list);
+    fit_enrich::enrich_notes_stale(&app, &mut list);
     json!(list)
 }
 
@@ -85,6 +86,7 @@ pub fn autopilot_get(app: AppHandle, autopilot_id: String) -> Value {
     let ap = store(&app).lock().get(&autopilot_id).map(|a| {
         let mut one = [a];
         enrich_applied(&app, &mut one);
+        fit_enrich::enrich_notes_stale(&app, &mut one);
         let [ap] = one;
         ap
     });
@@ -341,7 +343,8 @@ async fn best_matches_value(app: AppHandle, capped: bool) -> Value {
 }
 
 fn autopilot_best_matches_blocking(app: &AppHandle, capped: bool) -> Value {
-    let records = store(app).lock().list();
+    let mut records = store(app).lock().list();
+    fit_enrich::enrich_notes_stale(app, &mut records);
     let (tombstones, extra_agency) = snapshot_dedup_inputs(app);
 
     let dismissed_keys: HashSet<String> = app
@@ -395,6 +398,7 @@ mod linkedin_enrich;
 //
 // Same LOC-cap reasoning as `rerank` above: `keyword_rank` holds the pure phase-1 helpers,
 // `run` the pipeline that drives both phases (`autopilot_run` below is its IPC entry point).
+pub(crate) mod fit_enrich;
 mod guards;
 mod keyword_rank;
 mod phases;

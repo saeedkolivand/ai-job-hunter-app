@@ -132,7 +132,7 @@ impl DocumentStore {
         })
     }
 
-    pub fn clear_all(&self) {
+    pub fn clear_all(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         // The `repair_pre_pdf_text_string_mojibake` migration (see
         // `mojibake_repair::up`) snapshots every affected row's pre-repair,
@@ -143,12 +143,18 @@ impl DocumentStore {
         // artifact, not a table the app writes going forward, so `DROP`
         // (not `DELETE`) is correct: `user_version` is already past this
         // migration, so it will not be recreated.
-        conn.execute_batch(
-            "DELETE FROM vectors; DELETE FROM documents; DELETE FROM posting_vectors; DELETE FROM match_scores; \
-             DELETE FROM help_vectors; \
-             DROP TABLE IF EXISTS documents_pre_mojibake_repair;",
+        // Every statement is attempted; the first failure is returned.
+        crate::db::first_error(
+            [
+                "DELETE FROM vectors",
+                "DELETE FROM documents",
+                "DELETE FROM posting_vectors",
+                "DELETE FROM match_scores",
+                "DELETE FROM help_vectors",
+                "DROP TABLE IF EXISTS documents_pre_mojibake_repair",
+            ]
+            .map(|sql| conn.execute(sql, [])),
         )
-        .ok();
     }
 
     pub fn list(&self) -> Vec<DocumentRecord> {

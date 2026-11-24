@@ -124,3 +124,17 @@ fn an_unclassified_failure_keeps_an_existing_result() {
         Some(json!({ "errorKind": "auth" }))
     );
 }
+
+#[test]
+fn cancelled_in_tracker_is_true_only_for_a_cancelled_job() {
+    let mut tracker = JobTracker::default();
+    tracker.start("job-1", "test.kind");
+    assert!(!cancelled_in_tracker(&tracker, "job-1"));
+    tracker.set_waiting("job-1", true);
+    tracker.cancel("job-1");
+    assert!(cancelled_in_tracker(&tracker, "job-1"));
+    // Granting a slot after the cancel must not resurrect it.
+    tracker.set_waiting("job-1", false);
+    assert!(cancelled_in_tracker(&tracker, "job-1"));
+    assert!(!cancelled_in_tracker(&tracker, "missing"));
+}

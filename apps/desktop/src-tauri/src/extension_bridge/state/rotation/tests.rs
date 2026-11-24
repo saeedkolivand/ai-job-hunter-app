@@ -84,7 +84,7 @@ fn factory_reset_revokes_live_sockets_too() {
     let mut live = s.subscribe_revoke();
     s.inc_connected();
 
-    s.reset();
+    s.reset().unwrap();
 
     assert!(
         live.try_recv().is_ok(),

@@ -1,4 +1,22 @@
 use super::*;
+use std::sync::Arc;
+
+use crate::ai_config::AiConfigStore;
+use crate::ai_generations::AiGenerationStore;
+use crate::applications::ApplicationStore;
+use crate::autopilot::AutopilotStore;
+use crate::contact_profile::ContactProfileStore;
+use crate::credentials::CredentialStore;
+use crate::dedup::DedupStore;
+use crate::discovered::DiscoveredCompanyStore;
+use crate::documents::DocumentStore;
+use crate::email_watch::EmailWatchStore;
+use crate::job_preferences::JobPreferencesStore;
+use crate::jobs::JobTracker;
+use crate::pipeline::cache::KvCache;
+use crate::pipeline::runs::PipelineRunStore;
+use crate::referrals::ReferralStore;
+use crate::spend::SpendStore;
 use tempfile::TempDir;
 
 // The `Resettable` impl for the job log uses `.clear()`, not `.clear_all()` —
@@ -10,7 +28,7 @@ fn job_tracker_reset_clears_the_job_log() {
     tracker.lock().start("job-1", "ai.generate");
     assert!(!tracker.lock().list().is_empty());
 
-    Resettable::reset(&tracker);
+    Resettable::reset(&tracker).unwrap();
     assert!(tracker.lock().list().is_empty(), "job log wiped on reset");
 }
 
@@ -22,7 +40,7 @@ fn kv_cache_reset_clears_entries() {
     cache.set("ns", "k", "v");
     assert!(cache.get("ns", "k", 3600).is_some());
 
-    Resettable::reset(&cache);
+    Resettable::reset(&cache).unwrap();
     assert!(cache.get("ns", "k", 3600).is_none(), "cache wiped on reset");
 }
 
@@ -38,7 +56,7 @@ fn posting_history_reset_clears_every_key() {
         .unwrap();
     assert_eq!(DataStore::export(&store).as_array().unwrap().len(), 1);
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     assert!(DataStore::export(&store).as_array().unwrap().is_empty());
 }
 
@@ -57,7 +75,7 @@ fn email_watch_store_reset_clears_the_auto_write_opt_in() {
     assert!(store.set_auto_write_enabled(true).unwrap());
     assert!(store.status().auto_write_enabled, "precondition: opted in");
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
 
     assert!(
         !store.status().auto_write_enabled,
@@ -114,7 +132,7 @@ fn ai_generation_store_reset_empties_all_records() {
         .unwrap();
     assert_eq!(store.list().len(), 1, "precondition: one record inserted");
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     assert!(
         store.list().is_empty(),
         "AiGenerationStore must be empty after Resettable::reset"
@@ -147,7 +165,7 @@ fn application_store_reset_empties_applications_and_events() {
     let id = store.list().first().unwrap().id.clone();
     assert!(!store.events(&id).is_empty(), "precondition: event exists");
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     assert!(
         store.list().is_empty(),
         "ApplicationStore.list must be empty after reset"
@@ -183,7 +201,7 @@ fn job_preferences_store_reset_nullifies_all_fields() {
         "precondition: location set before reset"
     );
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     let after = store.get();
     assert!(
         after.location.is_none(),
@@ -224,7 +242,7 @@ fn contact_profile_store_reset_yields_default_empty_profile() {
         "precondition: email set before reset"
     );
 
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     let after = store.get();
     assert!(
         after.email.is_none(),
@@ -244,7 +262,7 @@ fn portable_prefs_reset_forgets_values_and_does_not_re_migrate() {
             5,
         )
         .unwrap();
-    Resettable::reset(&store);
+    Resettable::reset(&store).unwrap();
     let (values, migrated) = store.values().unwrap();
     assert!(values.is_empty() && migrated);
 }

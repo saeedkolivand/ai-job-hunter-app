@@ -144,8 +144,21 @@ impl CredentialStore {
     /// (including the Ollama account key). Driven off the metadata index, so it
     /// needs no hardcoded provider list. Used by the factory reset.
     pub fn clear_all(&self) -> AppResult<()> {
-        for meta in self.list() {
-            self.remove(&meta.board_id)?;
+        // Fallible read: an unreadable/corrupt index must fail the reset, not
+        // look like an empty store (a MISSING file is a valid empty store).
+        let index = {
+            let mut guard = self.cache.lock();
+            match guard.0.clone() {
+                Some(c) => c,
+                None => {
+                    let loaded = self.read_meta_file()?;
+                    guard.0 = Some(loaded.clone());
+                    loaded
+                }
+            }
+        };
+        for board_id in index.keys() {
+            self.remove(board_id)?;
         }
         Ok(())
     }

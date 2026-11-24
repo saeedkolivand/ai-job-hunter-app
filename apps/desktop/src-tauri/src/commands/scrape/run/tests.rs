@@ -1,3 +1,4 @@
+use super::slot::acquire_scrape_queued;
 use super::*;
 
 // ── backfill_country_code (pre-scrape cancellation) ──────────────────────
@@ -121,4 +122,45 @@ async fn an_existing_country_code_is_kept_and_costs_no_lookup() {
         !polled.load(std::sync::atomic::Ordering::SeqCst),
         "no geocode request may be issued when the country is already known"
     );
+}
+
+// ── acquire_scrape_queued: park instead of reject ────────────────────────
+
+#[tokio::test]
+async fn scrape_admission_past_concurrency_parks_instead_of_erroring() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let limiter = Arc::new(crate::limits::Limiter::new());
+    let mut held = Vec::new();
+    for _ in 0..crate::limits::SCRAPE_CONCURRENCY_MAX {
+        let (g, parked) = acquire_scrape_queued(&limiter, "scrape_boards", |_| ())
+            .await
+            .expect("free slot");
+        assert!(!parked);
+        held.push(g);
+    }
+
+    let ahead = Arc::new(AtomicUsize::new(usize::MAX));
+    let seen = ahead.clone();
+    let l2 = limiter.clone();
+    let waiter = tokio::spawn(async move {
+        acquire_scrape_queued(&l2, "scrape_boards", move |n| {
+            seen.store(n, Ordering::SeqCst)
+        })
+        .await
+        .map(|(_, parked)| parked)
+    });
+    // The hook fires before the wait begins.
+    for _ in 0..100 {
+        if ahead.load(Ordering::SeqCst) != usize::MAX {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(ahead.load(Ordering::SeqCst), 0, "parked, nobody ahead");
+    assert!(!waiter.is_finished(), "must wait, not error");
+
+    drop(held.pop());
+    assert!(waiter.await.unwrap().expect("granted"), "reports it parked");
 }

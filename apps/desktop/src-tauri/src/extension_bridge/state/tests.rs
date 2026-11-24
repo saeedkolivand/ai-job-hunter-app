@@ -30,7 +30,7 @@ fn reset_rotates_token() {
     use crate::data_store::Resettable;
     let (_dir, s) = bridge_state();
     let before = s.token();
-    s.reset();
+    s.reset().unwrap();
     assert_ne!(s.token(), before, "factory reset rotates the pairing token");
 }
 
@@ -92,7 +92,7 @@ fn reset_disables_every_optin() {
     for flag in OPTIN_FLAGS {
         let (_dir, s) = bridge_state();
         (flag.set)(&s, true);
-        s.reset();
+        s.reset().unwrap();
         assert!(!(flag.get)(&s), "{}", flag.reset_message);
     }
 }
@@ -197,5 +197,25 @@ fn optin_is_independent_of_the_others() {
             on(&s, true);
         }
         assert!(!(case.get)(&s), "{}", case.message);
+    }
+}
+
+// A reset whose opt-in persist fails must say so, yet still close every gate in memory.
+#[test]
+fn reset_reports_persist_failure_but_disables_every_gate_in_memory() {
+    use crate::data_store::Resettable;
+    let (dir, s) = bridge_state();
+    for flag in OPTIN_FLAGS {
+        (flag.set)(&s, true);
+    }
+    // A directory where the autofill flag file belongs makes its atomic write fail.
+    let path = dir
+        .path()
+        .join(crate::extension_bridge::AUTOFILL_OPTIN_FILE);
+    let _ = std::fs::remove_file(&path);
+    std::fs::create_dir_all(&path).unwrap();
+    assert!(s.reset().is_err(), "a failed opt-in persist must surface");
+    for flag in OPTIN_FLAGS {
+        assert!(!(flag.get)(&s), "{}", flag.reset_message);
     }
 }

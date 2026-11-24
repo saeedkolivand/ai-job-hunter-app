@@ -1,32 +1,11 @@
-use std::sync::Arc;
-
 use parking_lot::Mutex;
-
 use serde_json::{json, Value};
 use tauri::{App, AppHandle, Manager};
 
-use crate::ai_config::AiConfigStore;
-use crate::ai_generations::AiGenerationStore;
-use crate::applications::ApplicationStore;
-use crate::autopilot::AutopilotStore;
-use crate::contact_profile::ContactProfileStore;
-use crate::credentials::CredentialStore;
 use crate::data_store::Resettable;
-use crate::dedup::DedupStore;
-use crate::discovered::DiscoveredCompanyStore;
-use crate::documents::DocumentStore;
-use crate::email_watch::EmailWatchStore;
-use crate::job_preferences::JobPreferencesStore;
-use crate::jobs::JobTracker;
-use crate::notifications::NotificationStore;
+use crate::error::AppResult;
 use crate::observability::sanitize_reason;
-use crate::pipeline::cache::KvCache;
-use crate::pipeline::runs::PipelineRunStore;
-use crate::portable_prefs::PortablePrefsStore;
 use crate::postings::{InteractionStore, PostingsCache};
-use crate::referrals::ReferralStore;
-use crate::spend::SpendStore;
-use crate::sync::state::SyncStateStore;
 
 // ── Full-reset registry ───────────────────────────────────────────────────────
 //
@@ -36,161 +15,8 @@ use crate::sync::state::SyncStateStore;
 // new store is wiped on factory reset just by being managed through the helper,
 // with no edit to the reset command and no hand-maintained clear list.
 
-impl Resettable for Mutex<PostingsCache> {
-    fn reset(&self) {
-        self.lock().clear_all();
-    }
-}
-impl Resettable for Mutex<InteractionStore> {
-    fn reset(&self) {
-        self.lock().clear_all();
-    }
-}
-impl Resettable for Mutex<JobTracker> {
-    fn reset(&self) {
-        self.lock().clear();
-    }
-}
-impl Resettable for Mutex<CredentialStore> {
-    fn reset(&self) {
-        // Clears every stored secret (AI/provider keys incl. the Ollama account
-        // key, board passwords), driven off the credential metadata index.
-        let _ = self.lock().clear_all();
-    }
-}
-impl Resettable for Arc<Mutex<AutopilotStore>> {
-    fn reset(&self) {
-        self.lock().clear_all();
-    }
-}
-impl Resettable for DocumentStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for AiGenerationStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for ApplicationStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for JobPreferencesStore {
-    fn reset(&self) {
-        let _ = self.clear();
-    }
-}
-impl Resettable for DedupStore {
-    fn reset(&self) {
-        // Wipe every "not a duplicate" verdict — after a factory reset the
-        // clusterer starts from a clean slate (ADR-029).
-        self.clear_all();
-    }
-}
-impl Resettable for std::sync::Arc<crate::scraping::BoardHealthStore> {
-    fn reset(&self) {
-        // Forget every board's reliability history — after a factory reset the
-        // chips start from "unknown", not from the previous install's grudges.
-        self.clear_all();
-    }
-}
-impl Resettable for crate::posting_history::PostingHistoryStore {
-    fn reset(&self) {
-        // Forget every first/last-seen observation (ghost-job signals).
-        self.clear_all();
-    }
-}
-impl Resettable for DiscoveredCompanyStore {
-    fn reset(&self) {
-        // Wipe every passively-harvested ATS slug + watched-company star (ADR-030).
-        self.clear_all();
-    }
-}
-impl Resettable for ContactProfileStore {
-    fn reset(&self) {
-        let _ = self.clear();
-    }
-}
-impl Resettable for PortablePrefsStore {
-    fn reset(&self) {
-        // `Resettable::reset` is infallible for every store; changing that
-        // contract is out of scope, so a failed clear is at least logged.
-        if let Err(e) = self.clear() {
-            log::warn!("[reset] portable preferences not cleared: {}", e.code());
-        }
-    }
-}
-impl Resettable for AiConfigStore {
-    fn reset(&self) {
-        self.clear();
-    }
-}
-impl Resettable for ReferralStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for NotificationStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for KvCache {
-    fn reset(&self) {
-        self.clear();
-    }
-}
-impl Resettable for PipelineRunStore {
-    fn reset(&self) {
-        // Both tables: the run rows AND their per-stage event trail. A reset
-        // that left the events behind would keep a searchable record of which
-        // postings the user ran, which is the thing being wiped.
-        //
-        // Attempts both, reports neither: `reset` returns `()`, so a table that
-        // refuses to clear surfaces as a `warn!` line naming it (see
-        // `PipelineRunStore::clear_all`) rather than as a failed reset. That is
-        // the trait's contract for every store here, not this one's shortcut.
-        self.clear_all();
-    }
-}
-impl Resettable for SpendStore {
-    fn reset(&self) {
-        self.clear_all();
-    }
-}
-impl Resettable for EmailWatchStore {
-    fn reset(&self) {
-        // Account row back to defaults (including `auto_write_enabled`,
-        // unconditionally — see `EmailWatchStore::clear`'s own doc for why
-        // this store no longer has a separate `factory_reset`: an earlier
-        // round split the two on the reasoning that disconnect/reconnect
-        // of the SAME mailbox should preserve the opt-in, but `clear()`
-        // NULLs the address in the same statement that would preserve it,
-        // so nothing survives to verify "same mailbox" by the time a later
-        // `connect()` runs — the split hid an unverifiable premise instead
-        // of fixing it) + every `seen` row gone. The keychain app password
-        // is cleared separately by `Mutex<CredentialStore>`'s own `reset`
-        // (registered under the "credentials" label), which wipes every
-        // stored secret including this store's `email-imap` slot.
-        let _ = self.clear();
-    }
-}
-
-impl Resettable for SyncStateStore {
-    fn reset(&self) {
-        // Sync settings, cursors, baselines and held envelopes. The token is
-        // in the keychain and goes with "credentials". The device id stays.
-        if let Err(e) = SyncStateStore::reset(self) {
-            log::warn!("[sync] factory reset of sync state failed: {}", e.code());
-        }
-    }
-}
-
 /// A type-erased factory-reset action: resolve a store from app state and wipe it.
-type ResetAction = Box<dyn Fn(&AppHandle) + Send + Sync>;
+type ResetAction = Box<dyn Fn(&AppHandle) -> AppResult<()> + Send + Sync>;
 
 /// The factory-reset labels every persistent user-data store is registered under
 /// via `manage_resettable` in `shell/state.rs`. SINGLE source of truth: `shell/setup.rs`
@@ -237,25 +63,66 @@ impl ResetRegistry {
     pub fn register<T: Resettable + Send + Sync + 'static>(&mut self, label: &'static str) {
         self.actions.push((
             label,
-            Box::new(|app: &AppHandle| {
-                if let Some(state) = app.try_state::<T>() {
-                    state.reset();
-                }
-            }),
+            Box::new(|app: &AppHandle| app.try_state::<T>().map_or(Ok(()), |state| state.reset())),
         ));
     }
 
-    /// Wipe every registered store. Returns the labels cleared (for logging/tests).
+    /// Wipe every registered store, never stopping early. Returns the labels of
+    /// the stores that FAILED to clear (empty when everything was wiped).
     pub fn reset_all(&self, app: &AppHandle) -> Vec<&'static str> {
-        for (_, action) in &self.actions {
-            action(app);
-        }
-        self.labels()
+        failed_labels(
+            self.actions
+                .iter()
+                .map(|(label, action)| (*label, action(app))),
+        )
     }
 
     /// Labels of all registered stores, in registration order.
     pub fn labels(&self) -> Vec<&'static str> {
         self.actions.iter().map(|(label, _)| *label).collect()
+    }
+}
+
+/// Collect the labels whose reset failed, logging each. The iterator is driven
+/// to the end, so one failing store never prevents the rest from resetting.
+fn failed_labels(
+    results: impl IntoIterator<Item = (&'static str, AppResult<()>)>,
+) -> Vec<&'static str> {
+    results
+        .into_iter()
+        .filter_map(|(label, res)| match res {
+            Ok(()) => None,
+            Err(e) => {
+                log::warn!("[reset] store '{label}' not cleared: {}", e.code());
+                Some(label)
+            }
+        })
+        .collect()
+}
+
+/// Build the `privacy_reset_app` result from what could not be cleared.
+fn reset_result(failed_stores: &[&'static str], browser_state_cleared: bool) -> Value {
+    if !failed_stores.is_empty() {
+        let mut v = json!({
+            "success": false,
+            "error": "some data could not be cleared",
+            "failedStores": failed_stores,
+        });
+        if !browser_state_cleared {
+            v["browserStateRetained"] = json!(true);
+        }
+        v
+    } else if !browser_state_cleared {
+        // Partial reset: stores were wiped, but the on-disk Chromium board-login
+        // profiles could not be removed (commonly a Windows file lock). Reporting
+        // `success: true` would claim sessions were cleared while logins remain.
+        json!({
+            "success": false,
+            "error": "board login sessions could not be fully cleared",
+            "browserStateRetained": true,
+        })
+    } else {
+        json!({ "success": true })
     }
 }
 
@@ -378,10 +245,11 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
     // `shell/state.rs` — résumé/doc/generation stores, secrets, caches, and the
     // job log. Registry-driven, so adding a store needs registration only; this
     // command never changes. (Stores that failed to open are skipped.)
-    let cleared = app.state::<ResetRegistry>().reset_all(&app);
+    let registry = app.state::<ResetRegistry>();
+    let failed_stores = registry.reset_all(&app);
     log::info!(
-        "[privacy] factory reset wiped {} stores: {cleared:?}",
-        cleared.len()
+        "[privacy] factory reset: {} stores registered, failed: {failed_stores:?}",
+        registry.labels().len()
     );
 
     // The bridge's own `Resettable` (registered by `extension_bridge::manage`,
@@ -417,23 +285,13 @@ pub fn privacy_reset_app(app: AppHandle) -> Value {
         }
     }
 
-    if browser_state_cleared {
-        json!({ "success": true })
-    } else {
-        // Partial reset: the persistent stores above WERE wiped, but the on-disk
-        // Chromium board-login profiles could not be removed (commonly a Windows
-        // file lock while a browser still holds the profile). Report this honestly
-        // — returning `success: true` here would tell the user their sessions were
-        // cleared while authenticated board logins remain on disk (a privacy gap).
-        // The renderer surfaces this as a warning so the reset isn't silently
-        // over-reported as complete.
-        json!({
-            "success": false,
-            "error": "board login sessions could not be fully cleared",
-            "browserStateRetained": true,
-        })
-    }
+    reset_result(&failed_stores, browser_state_cleared)
 }
+
+mod stores;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod result_tests;

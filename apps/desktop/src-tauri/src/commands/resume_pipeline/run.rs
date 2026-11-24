@@ -97,6 +97,12 @@ pub async fn resume_pipeline_run(
             }
         };
 
+        // Stopped while parked: `jobs_cancel` already emitted `job.cancelled`.
+        if crate::commands::jobs::job_is_cancelled(&app_task, &job_id_task) {
+            cancels.unregister(&job_id_task).await;
+            return;
+        }
+
         if let Err(failure) = execute(&app_task, &run_id_task, &job_id_task, &req, &cancel).await {
             fail_run(
                 &app_task,

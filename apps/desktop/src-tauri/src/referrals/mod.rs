@@ -90,9 +90,9 @@ impl ReferralStore {
         })
     }
 
-    pub fn clear_all(&self) {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM referrals", []).ok();
+    pub fn clear_all(&self) -> AppResult<()> {
+        self.conn.lock().execute("DELETE FROM referrals", [])?;
+        Ok(())
     }
 
     /// All contacts, most-recently-updated first.

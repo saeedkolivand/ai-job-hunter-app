@@ -114,6 +114,11 @@ pub async fn generate_pipeline(app: AppHandle, req: AiGenerateRequest) -> Value 
             }
         };
 
+        // Stopped while parked: `jobs_cancel` already emitted `job.cancelled`.
+        if crate::commands::jobs::job_is_cancelled(&app_clone, &job_id_clone) {
+            return;
+        }
+
         // Per-provider daily ceiling — charged AFTER admission, matching
         // `ai_generate` and `admit_research`. Charging before `acquire_queued`
         // burned a day's quota on calls the rate window or the queue ceiling

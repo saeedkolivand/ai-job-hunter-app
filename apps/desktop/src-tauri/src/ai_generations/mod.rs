@@ -45,7 +45,7 @@ impl AiGenerationStore {
         })
     }
 
-    pub fn clear_all(&self) {
+    pub fn clear_all(&self) -> AppResult<()> {
         let conn = self.conn.lock();
         // The `repair_pre_pdf_text_string_mojibake` migration snapshots every
         // affected row's pre-repair, still-corrupt résumé/cover-letter text
@@ -54,9 +54,12 @@ impl AiGenerationStore {
         // `documents::DocumentStore::clear_all`). A full "erase my data"
         // reset must drop that snapshot too — `DROP`, not `DELETE`, since it
         // is a one-shot migration artifact `user_version` will not recreate.
-        conn.execute_batch(
-            "DELETE FROM ai_generations; DROP TABLE IF EXISTS ai_generations_pre_mojibake_repair;",
+        crate::db::first_error(
+            [
+                "DELETE FROM ai_generations",
+                "DROP TABLE IF EXISTS ai_generations_pre_mojibake_repair",
+            ]
+            .map(|sql| conn.execute(sql, [])),
         )
-        .ok();
     }
 }

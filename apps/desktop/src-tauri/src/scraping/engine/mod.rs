@@ -166,6 +166,8 @@ pub struct ScraperEngine {
     /// owned permit for the duration of a scrape lets us shrink the limit
     /// without cancelling running work.
     semaphore: ArcSwap<Semaphore>,
+    /// Callers parked on `semaphore` (see `permit.rs`); the `ahead` count.
+    waiting: std::sync::atomic::AtomicUsize,
     /// Active jobs keyed by job_id. Used by `cancel(job_id)`.
     ///
     /// Shared, not owned: this is the app-wide [`CancelRegistry`] (L1
@@ -191,6 +193,7 @@ impl ScraperEngine {
     pub fn new() -> Self {
         Self {
             semaphore: ArcSwap::from_pointee(Semaphore::new(2)),
+            waiting: std::sync::atomic::AtomicUsize::new(0),
             jobs: Arc::new(CancelRegistry::new()),
             browser_sem: Arc::new(Semaphore::new(1)),
             health: arc_swap::ArcSwapOption::empty(),
@@ -239,6 +242,8 @@ impl ScraperEngine {
 
 mod dedup;
 mod health_record;
+mod permit;
+pub use permit::{QueueEvent, QueueHook};
 mod run;
 mod scrape_boards;
 

@@ -4,6 +4,7 @@
 
 use rusqlite::params;
 
+use crate::error::AppResult;
 use crate::observability::sanitize_reason;
 
 use super::model::RETENTION_RUNS_PER_JOB;
@@ -125,20 +126,15 @@ impl PipelineRunStore {
     /// The two DELETEs are independent on purpose: the second must still run when
     /// the first fails, because a partial wipe beats no wipe when the goal is
     /// removing user data.
-    pub fn clear_all(&self) {
+    pub fn clear_all(&self) -> AppResult<()> {
         let conn = self.conn.lock();
-        if let Err(e) = conn.execute("DELETE FROM pipeline_run_events", []) {
-            log::warn!(
-                "[pipeline] factory reset failed to clear pipeline_run_events: {}",
-                sanitize_reason(&e.to_string())
-            );
-        }
-        if let Err(e) = conn.execute("DELETE FROM pipeline_runs", []) {
-            log::warn!(
-                "[pipeline] factory reset failed to clear pipeline_runs: {}",
-                sanitize_reason(&e.to_string())
-            );
-        }
+        crate::db::first_error(
+            [
+                "DELETE FROM pipeline_run_events",
+                "DELETE FROM pipeline_runs",
+            ]
+            .map(|sql| conn.execute(sql, [])),
+        )
     }
 
     /// Delete every run of ONE posting, and its events with it. Returns how

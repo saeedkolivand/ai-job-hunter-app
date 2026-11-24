@@ -141,33 +141,35 @@ pub(super) async fn autopilot_run(app: AppHandle, autopilot_id: String) -> Value
         &format!("Scraping {}", target.boards.join(", ")),
     );
 
-    let (postings, summaries) = match autopilot_scrape(&engine, &target, &job_id, &app).await {
-        Ok(out) => out,
-        Err(e) => {
-            engine.unregister_token(&job_id).await;
-            // A Stop before any item streamed surfaces as `Err("scrape cancelled")`
-            // from the engine, so check the token FIRST — otherwise a run the user
-            // stopped is persisted `Failed`, and the `{error}` payload makes
-            // `outcome_failed` true, which re-runs the very scrape they stopped.
-            // Mirrors the Ok-path cancel handler below.
-            if cancel_token.is_cancelled() {
-                return finish_cancelled(
-                    &app,
-                    &span,
-                    &autopilot_id,
-                    &job_id,
-                    "cancelled during scrape",
-                );
+    let queue_hook = crate::commands::jobs::scrape_queue_hook(&app, &job_id);
+    let (postings, summaries) =
+        match autopilot_scrape(&engine, &target, &job_id, &app, queue_hook).await {
+            Ok(out) => out,
+            Err(e) => {
+                engine.unregister_token(&job_id).await;
+                // A Stop before any item streamed surfaces as `Err("scrape cancelled")`
+                // from the engine, so check the token FIRST — otherwise a run the user
+                // stopped is persisted `Failed`, and the `{error}` payload makes
+                // `outcome_failed` true, which re-runs the very scrape they stopped.
+                // Mirrors the Ok-path cancel handler below.
+                if cancel_token.is_cancelled() {
+                    return finish_cancelled(
+                        &app,
+                        &span,
+                        &autopilot_id,
+                        &job_id,
+                        "cancelled during scrape",
+                    );
+                }
+                // Whole-batch failure never reached `record_run`, so there are no
+                // fresh summaries for this run — clear the PRIOR run's, or a later
+                // chip strip would render stale board data as if it were this run's.
+                store(&app).lock().fail_run_without_summaries(&autopilot_id);
+                crate::commands::jobs::job_fail(&app, &job_id, e.to_string());
+                span.end(false);
+                return json!({ "error": e, "jobId": job_id });
             }
-            // Whole-batch failure never reached `record_run`, so there are no
-            // fresh summaries for this run — clear the PRIOR run's, or a later
-            // chip strip would render stale board data as if it were this run's.
-            store(&app).lock().fail_run_without_summaries(&autopilot_id);
-            crate::commands::jobs::job_fail(&app, &job_id, e.to_string());
-            span.end(false);
-            return json!({ "error": e, "jobId": job_id });
-        }
-    };
+        };
 
     // Passively harvest ATS company slugs from EVERY scraped posting URL BEFORE any
     // keyword/score filtering (ADR-030 §c "harvest every stored posting URL"),

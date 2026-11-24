@@ -111,28 +111,28 @@ fn a2_b1_italian_vs_fluent_requirement_is_a_mandatory_gap() {
 }
 
 #[test]
-fn fluent_italian_claim_is_removed_and_the_gap_appended() {
+fn fluent_italian_claim_is_removed_and_the_gap_is_not_appended() {
     let note = "You are a strong CRM manager. You are fluent in Italian and English. \
                 Tip: lead with your retention results.";
-    let out = ground_note(note, A2_B1_RESUME, "Fluent Italian required.");
+    let out = finish_note(note, A2_B1_RESUME);
     assert!(!out.contains("fluent in Italian"), "{out}");
     assert!(out.contains("strong CRM manager"));
     assert!(out.contains("Tip: lead with your retention results."));
     assert!(
-        out.contains("Unmet must-have: Italian C1 required, résumé shows B1."),
-        "{out}"
+        !out.contains("Unmet"),
+        "gap text lives in the structured field: {out}"
     );
 }
 
 #[test]
 fn restating_the_ad_requirement_is_not_a_candidate_claim() {
-    let out = ground_note("The posting requires fluent Italian.", A2_B1_RESUME, "");
+    let out = finish_note("The posting requires fluent Italian.", A2_B1_RESUME);
     assert!(out.contains("requires fluent Italian"));
 }
 
 #[test]
 fn evidenced_claims_survive() {
-    let out = ground_note("You speak English at C2 level.", A2_B1_RESUME, "");
+    let out = finish_note("You speak English at C2 level.", A2_B1_RESUME);
     assert!(out.contains("English at C2"));
 }
 
@@ -140,8 +140,12 @@ fn evidenced_claims_survive() {
 fn preferred_requirement_is_never_a_gap() {
     let ad = "Nice to have: fluent Italian\nItalian C2 is a plus";
     let report = mandatory_report(A2_B1_RESUME, ad);
-    assert_eq!(report, MandatoryReport::default());
-    assert_eq!(ground_note("Good fit.", A2_B1_RESUME, ad), "Good fit.");
+    assert!(
+        report.gaps.is_empty() && report.to_verify.is_empty(),
+        "{report:?}"
+    );
+    assert!(report.preferred_unmet);
+    assert_eq!(report.category(A2_B1_RESUME), FitCategory::Stretch);
 }
 
 #[test]
@@ -151,18 +155,13 @@ fn missing_evidence_is_unknown_not_a_gap() {
     let report = mandatory_report(resume, ad);
     assert!(report.gaps.is_empty(), "{report:?}");
     assert_eq!(report.to_verify.len(), 2, "{report:?}");
-    let out = ground_note("Solid CRM background.", resume, ad);
-    assert!(out.contains("To verify (must-have): Italian C1; "), "{out}");
-    assert!(!out.contains("Unmet"));
+    assert_eq!(report.to_verify[0], "Italian C1");
+    assert_eq!(report.category(resume), FitCategory::Unknown);
 }
 
 #[test]
 fn unsupported_fluency_claim_with_no_evidence_is_dropped() {
-    let out = ground_note(
-        "You are fluent in Italian. Good CRM depth.",
-        "CRM manager",
-        "",
-    );
+    let out = finish_note("You are fluent in Italian. Good CRM depth.", "CRM manager");
     assert_eq!(out, "Good CRM depth.");
 }
 
@@ -194,6 +193,16 @@ fn years_check_runs_on_a_line_that_also_demands_a_language() {
 }
 
 #[test]
+fn unevaluable_mandatory_requirement_is_to_verify_not_a_supported_fit() {
+    let ad = "Work authorization required for this role";
+    let report = mandatory_report("CRM manager", ad);
+    assert_eq!(report.to_verify, vec![ad.to_string()]);
+    assert_eq!(report.category("CRM manager"), FitCategory::Unknown);
+    let ok = mandatory_report("English C2", "English C1 required");
+    assert!(ok.to_verify.is_empty() && ok.category("cv") == FitCategory::SupportedFit);
+}
+
+#[test]
 fn explicit_mandatory_level_below_c1_is_compared() {
     let report = mandatory_report("German A1", "German B2 required");
     assert_eq!(
@@ -204,23 +213,85 @@ fn explicit_mandatory_level_below_c1_is_compared() {
 
 #[test]
 fn candidate_claim_containing_require_is_not_exempt() {
-    let out = ground_note(
-        "You meet the requirement for fluent Italian.",
-        A2_B1_RESUME,
-        "",
-    );
+    let out = finish_note("You meet the requirement for fluent Italian.", A2_B1_RESUME);
     assert!(!out.contains("fluent Italian"), "{out}");
 }
 
 #[test]
-fn finished_note_respects_the_cap_and_keeps_the_warnings() {
+fn finished_note_respects_the_cap() {
     let note = "Strong retention background across many roles. ".repeat(40);
-    let out = finish_note(&note, A2_B1_RESUME, Some("Fluent Italian (C1) required."));
+    let out = finish_note(&note, A2_B1_RESUME);
     assert!(out.chars().count() <= NOTE_CAP, "{}", out.chars().count());
-    assert!(
-        out.ends_with("Unmet must-have: Italian C1 required, résumé shows B1."),
-        "{out}"
+}
+
+fn job_with(description: Option<&str>) -> FoundJob {
+    FoundJob {
+        description: description.map(str::to_string),
+        ..crate::autopilot::tests::support::found_job_full(
+            "https://acme.example/1",
+            "CRM",
+            "Acme",
+            0,
+        )
+    }
+}
+
+#[test]
+fn apply_note_fills_structured_fields_and_keeps_the_prose_clean() {
+    let mut job = job_with(Some("Fluent Italian (C1) required."));
+    let stored = apply_note(
+        &mut job,
+        "You are fluent in Italian. Lead with retention results.",
+        A2_B1_RESUME,
     );
+    assert!(stored);
+    assert_eq!(
+        job.assistant_notes.as_deref(),
+        Some("Lead with retention results.")
+    );
+    assert_eq!(
+        job.mandatory_gaps,
+        vec!["Italian C1 required, résumé shows B1".to_string()]
+    );
+    assert_eq!(job.fit_category, Some(FitCategory::ExplicitGap));
+    assert_eq!(
+        job.notes_basis.as_deref(),
+        Some(notes_basis(A2_B1_RESUME, job.description.as_deref()).as_str())
+    );
+}
+
+#[test]
+fn apply_note_leaves_the_job_alone_when_nothing_grounded_remains() {
+    let mut job = job_with(Some("Fluent Italian required."));
+    assert!(!apply_note(
+        &mut job,
+        "You are fluent in Italian.",
+        A2_B1_RESUME
+    ));
+    assert!(job.assistant_notes.is_none() && job.fit_category.is_none());
+}
+
+#[test]
+fn fit_category_rule_table() {
+    let rep = |gaps: &[&str], verify: &[&str], pref: bool, reqs: bool| MandatoryReport {
+        gaps: gaps.iter().map(|s| s.to_string()).collect(),
+        to_verify: verify.iter().map(|s| s.to_string()).collect(),
+        preferred_unmet: pref,
+        has_requirements: reqs,
+    };
+    use FitCategory::*;
+    let cases = [
+        (rep(&["g"], &["v"], true, true), "cv", ExplicitGap),
+        (rep(&["g"], &[], false, false), "", ExplicitGap),
+        (rep(&[], &["v"], true, true), "cv", Unknown),
+        (rep(&[], &[], false, true), "", Unknown),
+        (rep(&[], &[], false, false), "cv", Unknown),
+        (rep(&[], &[], true, true), "cv", Stretch),
+        (rep(&[], &[], false, true), "cv", SupportedFit),
+    ];
+    for (report, resume, want) in cases {
+        assert_eq!(report.category(resume), want, "{report:?} / {resume:?}");
+    }
 }
 
 #[test]
@@ -244,7 +315,11 @@ fn levels_do_not_bleed_across_sentences() {
 
 #[test]
 fn empty_or_garbled_inputs_are_harmless() {
-    assert_eq!(ground_note("", "", ""), "");
+    assert_eq!(finish_note("", ""), "");
     assert_eq!(mandatory_report("", ""), MandatoryReport::default());
-    assert_eq!(ground_note("Fine.", "\u{0}\u{fffd}§§", "%%%% ;;;"), "Fine.");
+    assert_eq!(finish_note("Fine.", "\u{0}\u{fffd}§§"), "Fine.");
+    assert_eq!(
+        mandatory_report("cv", "%%%% ;;;").category("cv"),
+        FitCategory::Unknown
+    );
 }

@@ -161,3 +161,15 @@ pub fn new_job_id() -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// Collapse already-attempted statement results into one: `Ok` if every one
+/// succeeded, else the FIRST error. For multi-statement wipes (factory reset)
+/// that must try every statement rather than stop at the first failure.
+pub fn first_error(
+    results: impl IntoIterator<Item = rusqlite::Result<usize>>,
+) -> crate::error::AppResult<()> {
+    match results.into_iter().find_map(Result::err) {
+        Some(e) => Err(e.into()),
+        None => Ok(()),
+    }
+}

@@ -279,3 +279,33 @@ fn a_held_row_keeps_its_content_when_the_url_resurfaces() {
     assert!(row.identity_review.is_some(), "the hold survives");
     assert!(!row.is_new, "is_new is still cleared");
 }
+
+#[test]
+fn merge_adopts_a_regenerated_note_with_its_fit_and_stamp_together() {
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.assistant_notes = Some("old note".into());
+    existing.fit_category = Some(FitCategory::SupportedFit);
+    existing.notes_basis = Some("old.stamp".into());
+
+    let mut regenerated = found_job("https://a.com/1", 200);
+    regenerated.assistant_notes = Some("new note".into());
+    regenerated.mandatory_gaps = vec!["Italian C1 required, résumé shows B1".into()];
+    regenerated.fit_category = Some(FitCategory::ExplicitGap);
+    regenerated.notes_basis = Some("new.stamp".into());
+
+    let merged = merge_found_jobs(&[existing], vec![regenerated]);
+    assert_eq!(merged[0].assistant_notes.as_deref(), Some("new note"));
+    assert_eq!(merged[0].fit_category, Some(FitCategory::ExplicitGap));
+    assert_eq!(merged[0].mandatory_gaps.len(), 1);
+    assert_eq!(merged[0].notes_basis.as_deref(), Some("new.stamp"));
+}
+
+#[test]
+fn merge_keeps_the_prior_note_when_the_resurfaced_copy_has_none() {
+    let mut existing = found_job("https://a.com/1", 100);
+    existing.assistant_notes = Some("kept".into());
+    existing.notes_basis = Some("s".into());
+    let merged = merge_found_jobs(&[existing], vec![found_job("https://a.com/1", 200)]);
+    assert_eq!(merged[0].assistant_notes.as_deref(), Some("kept"));
+    assert_eq!(merged[0].notes_basis.as_deref(), Some("s"));
+}

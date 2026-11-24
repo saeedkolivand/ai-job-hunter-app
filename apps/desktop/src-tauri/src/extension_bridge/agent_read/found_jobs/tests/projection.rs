@@ -20,12 +20,16 @@ fn found_jobs_compact_row_has_exact_keys_by_default() {
             "autopilotId",
             "autopilotName",
             "company",
+            "fitCategory",
             "foundAt",
             "isAgency",
             "location",
+            "mandatoryGaps",
+            "notesStale",
             "score",
             "scoreProvisional",
             "title",
+            "toVerify",
             "url",
         ],
         "the compact row must be exactly this field set (issue #1167), no description"
@@ -78,6 +82,7 @@ fn found_jobs_never_carries_forbidden_keys() {
         "clusterId",
         "clusterCanonical",
         "clusterMembers",
+        "notesBasis",
     ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}");
     }
@@ -186,5 +191,18 @@ fn found_jobs_exposes_a_held_row_identity_review_with_fenced_resolved_text() {
             value.starts_with("<job_posting>\n"),
             "{field} must be fenced: {value}"
         );
+    }
+}
+
+#[test]
+fn found_jobs_fit_lists_are_fenced_and_the_category_passes_through() {
+    let records = vec![autopilot_with_jobs("ap-1", vec![full_found_job()])];
+    let out = resolve_found_jobs(&records, Some("ap-1"), &no_filters(), &no_applied(), 0, 20)
+        .expect("found");
+    let row = &out["jobs"][0];
+    assert_eq!(row["fitCategory"], "explicitGap");
+    for list in ["toVerify", "mandatoryGaps"] {
+        let item = row[list][0].as_str().expect("a fenced string");
+        assert!(item.contains("<job_posting"), "{list} not fenced: {item}");
     }
 }

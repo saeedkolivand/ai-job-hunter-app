@@ -196,6 +196,16 @@ fn list_autopilots(app: &AppHandle) -> AppResult<Vec<crate::autopilot::Autopilot
         .ok_or_else(|| AppError::Config("autopilot store unavailable".to_string()))
 }
 
+/// [`list_autopilots`] with each note's `notes_stale` derived (the store never persists it), so
+/// the fit an agent reads carries the same freshness signal the UI does.
+fn list_autopilots_with_fit_freshness(
+    app: &AppHandle,
+) -> AppResult<Vec<crate::autopilot::Autopilot>> {
+    let mut list = list_autopilots(app)?;
+    crate::commands::autopilot::fit_enrich::enrich_notes_stale(app, &mut list);
+    Ok(list)
+}
+
 fn profile_resource(app: &AppHandle) -> AppResult<Value> {
     // Reuses `super::profile_outcome` VERBATIM — the exact consent gate +
     // `AutofillProfile` projection `profile.get` uses (see

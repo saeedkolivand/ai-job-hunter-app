@@ -162,7 +162,7 @@ fn clear_all_empties_the_table() {
         .upsert(&make_contact("ref-2", "https://acme.com/jobs/2"))
         .unwrap();
 
-    store.clear_all();
+    store.clear_all().unwrap();
 
     assert!(
         store.list().is_empty(),

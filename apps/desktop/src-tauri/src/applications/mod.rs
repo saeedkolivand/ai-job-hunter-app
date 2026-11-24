@@ -149,9 +149,11 @@ impl ApplicationStore {
         Ok(store)
     }
 
-    pub fn clear_all(&self) {
+    pub fn clear_all(&self) -> AppResult<()> {
         let conn = self.conn.lock();
-        conn.execute("DELETE FROM applications", []).ok();
-        conn.execute("DELETE FROM status_events", []).ok();
+        crate::db::first_error(
+            ["DELETE FROM applications", "DELETE FROM status_events"]
+                .map(|sql| conn.execute(sql, [])),
+        )
     }
 }

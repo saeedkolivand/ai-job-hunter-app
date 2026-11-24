@@ -98,12 +98,37 @@ pub fn job_queued(app: &AppHandle, id: &str, ahead: usize) {
     emit_job_event(app, "job.queued", id, Some(json!({ "ahead": ahead })));
 }
 
+/// Pure core of [`job_is_cancelled`].
+fn cancelled_in_tracker(tracker: &JobTracker, id: &str) -> bool {
+    tracker
+        .get(id)
+        .is_some_and(|j| j.status == crate::jobs::JobStatus::Cancelled)
+}
+
+/// Whether the job was cancelled (e.g. a Stop while parked behind the limiter).
+/// Checked right after a slot is granted: `jobs_cancel` already emitted
+/// `job.cancelled`, so the caller just drops its guard and returns.
+pub fn job_is_cancelled(app: &AppHandle, id: &str) -> bool {
+    cancelled_in_tracker(&app.state::<Mutex<JobTracker>>().lock(), id)
+}
+
 /// The counterpart to [`job_queued`]: a slot opened up, status → `running`.
 pub fn job_dequeued(app: &AppHandle, id: &str) {
     app.state::<Mutex<JobTracker>>()
         .lock()
         .set_waiting(id, false);
     emit_job_event(app, "job.started", id, None);
+}
+
+/// The scraper-engine permit wait as job status: parked → [`job_queued`],
+/// granted → [`job_dequeued`]. Handed to `ScraperEngine::scrape_boards*`.
+pub fn scrape_queue_hook(app: &AppHandle, id: &str) -> crate::scraping::engine::QueueHook {
+    use crate::scraping::engine::QueueEvent;
+    let (app, id) = (app.clone(), id.to_string());
+    std::sync::Arc::new(move |event| match event {
+        QueueEvent::Parked { ahead } => job_queued(&app, &id, ahead),
+        QueueEvent::Granted => job_dequeued(&app, &id),
+    })
 }
 
 /// Update a job's progress (0.0–1.0) and emit `job.progress`.

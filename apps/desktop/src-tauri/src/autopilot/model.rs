@@ -309,6 +309,23 @@ pub struct FoundJob {
     /// `#[serde(default)]` so a job recorded before this field existed loads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub assistant_notes: Option<String>,
+    /// Unmet must-haves found in the ad versus the résumé, stored with the note (#1446).
+    /// Structured, never appended to the prose. Empty on a legacy record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mandatory_gaps: Vec<String>,
+    /// Must-haves the résumé cannot confirm either way. Empty on a legacy record.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to_verify: Vec<String>,
+    /// Deterministic fit category, see [`super::FitCategory`]. `None` on a legacy record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit_category: Option<super::FitCategory>,
+    /// Stamp of the résumé + description the note was written from ([`super::notes_basis`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes_basis: Option<String>,
+    /// **Derived** at read time (like `applied`), never persisted: the note's stamp no longer
+    /// matches the current résumé/description.
+    #[serde(default, skip_serializing_if = "super::fit::is_false")]
+    pub notes_stale: bool,
     // ── Cross-board cluster annotations (ADR-029) ──────────────────────────────
     // Recomputed at every `record_run` (and on a `dedup_mark_not_duplicate`
     // split) by the pure `scraping::cluster` pass; never hand-set. All

@@ -7,10 +7,10 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
+use self::slot::{acquire_scrape_slot, wait_for_scrape_slot};
 use super::clusters::recluster_postings_cache;
 use super::{ScrapeBoardsRequest, ScrapeUrlRequest};
 use crate::db::{new_job_id, now_ms};
-use crate::error::AppResult;
 use crate::events::{emit_event, JobEvent, JOBS_EVENT, SCRAPE_PROGRESS};
 use crate::postings::PostingsCache;
 use crate::scraping::{BoardSearchInput, ScraperEngine, WorkType};
@@ -19,23 +19,6 @@ use crate::scraping::{BoardSearchInput, ScraperEngine, WorkType};
 /// cap; combined with the central `amount` cap, whichever limit is hit first
 /// stops the scrape.
 const MAX_PAGE_BUDGET: u32 = 10;
-
-/// Take one slot on the shared scrape budget (rate + concurrency) under `op`. The
-/// returned guard is held for the whole run and releases the slot when dropped.
-fn acquire_scrape_slot(
-    app: &AppHandle,
-    op: &'static str,
-) -> AppResult<crate::limits::ConcurrencyGuard> {
-    let limiter = app
-        .state::<std::sync::Arc<crate::limits::Limiter>>()
-        .inner()
-        .clone();
-    limiter.acquire(
-        op,
-        crate::limits::SCRAPE_RATE_MAX,
-        crate::limits::SCRAPE_CONCURRENCY_MAX,
-    )
-}
 
 /// Passively harvest ATS company slugs from posting URLs (parse-only, zero
 /// network) — ADR-030 §c. Resolves the store at this shell boundary; a missing
@@ -108,13 +91,9 @@ async fn backfill_country_code_with(
 pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     let job_id = new_job_id();
 
-    // Anti-abuse: rate + concurrency cap. Rejected before a job is created so a
-    // looping/XSS'd renderer can't drive unbounded scrape traffic. The guard is
-    // moved into the spawned task and dropped when the scrape finishes.
-    let guard = match acquire_scrape_slot(&app, "scrape_boards") {
-        Ok(g) => g,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
+    // Anti-abuse: rate + concurrency cap, enforced inside the spawned task via a
+    // QUEUED admission (a user-started scrape waits and reports `queued` instead
+    // of being rejected; the queue is bounded by `SCRAPE_QUEUE_MAX`).
 
     // "scrape.board" kept unchanged — renderer / use-worker-activity tests key on it.
     crate::commands::jobs::job_start(&app, &job_id, "scrape.board");
@@ -238,8 +217,27 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
-        // Hold the concurrency guard for the whole scrape; dropped on completion.
-        let _guard = guard;
+        // Wait (cancellably) for a slot; held for the whole scrape, dropped on completion.
+        let _guard = match wait_for_scrape_slot(
+            &app_clone,
+            "scrape_boards",
+            &job_id_clone,
+            Some(&cancel_token),
+        )
+        .await
+        {
+            Ok(Some(g)) => g,
+            Ok(None) => {
+                // Stopped while parked: `jobs_cancel` already emitted `job.cancelled`.
+                engine.unregister_token(&job_id_clone).await;
+                return;
+            }
+            Err(e) => {
+                engine.unregister_token(&job_id_clone).await;
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
+                return;
+            }
+        };
 
         // Fill in the market for a typed (not picked) location, unless the user
         // already cancelled — see [`backfill_country_code`].
@@ -260,6 +258,10 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 job_id_clone.clone(),
                 Some(on_progress),
                 Some(on_item),
+                Some(crate::commands::jobs::scrape_queue_hook(
+                    &app_clone,
+                    &job_id_clone,
+                )),
             )
             .await;
 
@@ -296,6 +298,9 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                     json!({ "count": postings.len(), "boards": summaries }),
                 );
             }
+            // A Stop (including one while parked for a permit) already emitted
+            // `job.cancelled` via `jobs_cancel`; failing it here would overwrite that.
+            Err(_) if cancel_token.is_cancelled() => {}
             Err(e) => {
                 crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
             }
@@ -314,21 +319,28 @@ pub async fn scrape_url(app: AppHandle, req: ScrapeUrlRequest) -> Value {
         return json!({ "error": "url is required" });
     }
 
-    // Anti-abuse: rate + concurrency cap (shares the scrape budget knobs). Checked
-    // after the cheap empty-url guard so an invalid call costs no slot.
-    let guard = match acquire_scrape_slot(&app, "scrape_url") {
-        Ok(g) => g,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
-
+    // Anti-abuse: rate + concurrency cap (shares the scrape budget knobs), queued
+    // inside the task after the cheap empty-url guard.
     let job_id = new_job_id();
     crate::commands::jobs::job_start(&app, &job_id, "scrape.url");
 
     let app_clone = app.clone();
     let job_id_clone = job_id.clone();
     tokio::spawn(async move {
-        // Hold the concurrency guard for the whole resolve; dropped on completion.
-        let _guard = guard;
+        // Held for the whole resolve; dropped on completion.
+        let _guard = match wait_for_scrape_slot(&app_clone, "scrape_url", &job_id_clone, None).await
+        {
+            Ok(Some(g)) if crate::commands::jobs::job_is_cancelled(&app_clone, &job_id_clone) => {
+                drop(g);
+                return;
+            }
+            Ok(Some(g)) => g,
+            Ok(None) => return,
+            Err(e) => {
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, e.to_string());
+                return;
+            }
+        };
         let result = crate::scraping::scrape_url::resolve(&url).await;
 
         match result {
@@ -422,5 +434,6 @@ pub async fn scrape_resolve_url(app: AppHandle, url: String) -> Value {
     }
 }
 
+mod slot;
 #[cfg(test)]
 mod tests;
