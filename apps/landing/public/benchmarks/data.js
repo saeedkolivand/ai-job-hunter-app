@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795003005120,
+  "lastUpdate": 1795517939277,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "49699333+dependabot[bot]@users.noreply.github.com",
-            "name": "dependabot[bot]",
-            "username": "dependabot[bot]"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "84cbcc6d5edb79ae245ddc494e8fc7ad678d986f",
-          "message": "chore: bump the desktop-rust group (#1097)\n\nBumps the desktop-rust group in /apps/desktop/src-tauri with 15 updates:\n\n| Package | From | To |\n| --- | --- | --- |\n| [tauri-plugin-opener](https://github.com/tauri-apps/plugins-workspace) | `2.5.4` | `2.5.5` |\n| [tauri-plugin-dialog](https://github.com/tauri-apps/plugins-workspace) | `2.7.2` | `2.7.3` |\n| [tauri-plugin-updater](https://github.com/tauri-apps/plugins-workspace) | `2.10.1` | `2.11.0` |\n| [tauri-plugin-clipboard-manager](https://github.com/tauri-apps/plugins-workspace) | `2.3.2` | `2.3.3` |\n| [tauri-plugin-shell](https://github.com/tauri-apps/plugins-workspace) | `2.3.5` | `2.3.6` |\n| [tauri-plugin-log](https://github.com/tauri-apps/plugins-workspace) | `2.9.0` | `2.9.1` |\n| [sentry](https://github.com/getsentry/sentry-rust) | `0.49.1` | `0.49.2` |\n| [tauri-plugin-single-instance](https://github.com/tauri-apps/plugins-workspace) | `2.4.3` | `2.4.4` |\n| [tauri-plugin-notification](https://github.com/tauri-apps/plugins-workspace) | `2.3.3` | `2.4.0` |\n| [tauri-plugin-deep-link](https://github.com/tauri-apps/plugins-workspace) | `2.4.9` | `2.4.10` |\n| [tauri-plugin-positioner](https://github.com/tauri-apps/plugins-workspace) | `2.3.3` | `2.3.4` |\n| [tauri-plugin-websocket](https://github.com/tauri-apps/plugins-workspace) | `2.4.2` | `2.4.3` |\n| [uuid](https://github.com/uuid-rs/uuid) | `1.25.0` | `1.26.0` |\n| [flate2](https://github.com/rust-lang/flate2-rs) | `1.1.9` | `1.1.10` |\n| [aes](https://github.com/RustCrypto/block-ciphers) | `0.9.2` | `0.9.3` |\n\n\nUpdates `tauri-plugin-opener` from 2.5.4 to 2.5.5\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/http-v2.5.4...http-v2.5.5)\n\nUpdates `tauri-plugin-dialog` from 2.7.2 to 2.7.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/dialog-v2.7.2...dialog-v2.7.3)\n\nUpdates `tauri-plugin-updater` from 2.10.1 to 2.11.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/updater-v2.10.1...updater-v2.11.0)\n\nUpdates `tauri-plugin-clipboard-manager` from 2.3.2 to 2.3.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/os-v2.3.2...nfc-v2.3.3)\n\nUpdates `tauri-plugin-shell` from 2.3.5 to 2.3.6\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.5...nfc-v2.3.6)\n\nUpdates `tauri-plugin-log` from 2.9.0 to 2.9.1\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/log-v2.9.0...log-v2.9.1)\n\nUpdates `sentry` from 0.49.1 to 0.49.2\n- [Release notes](https://github.com/getsentry/sentry-rust/releases)\n- [Changelog](https://github.com/getsentry/sentry-rust/blob/master/CHANGELOG.md)\n- [Commits](https://github.com/getsentry/sentry-rust/compare/0.49.1...0.49.2)\n\nUpdates `tauri-plugin-single-instance` from 2.4.3 to 2.4.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.3...fs-v2.4.4)\n\nUpdates `tauri-plugin-notification` from 2.3.3 to 2.4.0\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.3...fs-v2.4.0)\n\nUpdates `tauri-plugin-deep-link` from 2.4.9 to 2.4.10\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/deep-link-v2.4.9...deep-link-v2.4.10)\n\nUpdates `tauri-plugin-positioner` from 2.3.3 to 2.3.4\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/nfc-v2.3.3...nfc-v2.3.4)\n\nUpdates `tauri-plugin-websocket` from 2.4.2 to 2.4.3\n- [Release notes](https://github.com/tauri-apps/plugins-workspace/releases)\n- [Commits](https://github.com/tauri-apps/plugins-workspace/compare/fs-v2.4.2...fs-v2.4.3)\n\nUpdates `uuid` from 1.25.0 to 1.26.0\n- [Release notes](https://github.com/uuid-rs/uuid/releases)\n- [Commits](https://github.com/uuid-rs/uuid/compare/1.25.0...v1.26.0)\n\nUpdates `flate2` from 1.1.9 to 1.1.10\n- [Release notes](https://github.com/rust-lang/flate2-rs/releases)\n- [Commits](https://github.com/rust-lang/flate2-rs/compare/1.1.9...1.1.10)\n\nUpdates `aes` from 0.9.2 to 0.9.3\n- [Commits](https://github.com/RustCrypto/block-ciphers/compare/aes-v0.9.2...aes-v0.9.3)\n\n---\nupdated-dependencies:\n- dependency-name: tauri-plugin-opener\n  dependency-version: 2.5.5\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-dialog\n  dependency-version: 2.7.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-updater\n  dependency-version: 2.11.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-clipboard-manager\n  dependency-version: 2.3.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-shell\n  dependency-version: 2.3.6\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-log\n  dependency-version: 2.9.1\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: sentry\n  dependency-version: 0.49.2\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-single-instance\n  dependency-version: 2.4.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-notification\n  dependency-version: 2.4.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-deep-link\n  dependency-version: 2.4.10\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-positioner\n  dependency-version: 2.3.4\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: tauri-plugin-websocket\n  dependency-version: 2.4.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: uuid\n  dependency-version: 1.26.0\n  dependency-type: direct:production\n  update-type: version-update:semver-minor\n  dependency-group: desktop-rust\n- dependency-name: flate2\n  dependency-version: 1.1.10\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n- dependency-name: aes\n  dependency-version: 0.9.3\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n  dependency-group: desktop-rust\n...\n\nSigned-off-by: dependabot[bot] <support@github.com>\nCo-authored-by: dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>",
-          "timestamp": "2026-09-02T20:21:05+02:00",
-          "tree_id": "0316ff2ac2fc008a3a0f79911ba17a6b5159b9db",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/84cbcc6d5edb79ae245ddc494e8fc7ad678d986f"
-        },
-        "date": 1788374712831,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2299437,
-            "range": "± 25327",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2737169,
-            "range": "± 35080",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 310167,
-            "range": "± 9877",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 304780,
             "range": "± 10361",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "658ee9546b96bc2fa652355ffd882d3476d692c2",
+          "message": "fix: open-issue sweep (crash redaction, export locale, benefits, projects, tailor template, status errors) (#1555)\n\n* ci(release): pin @sentry/cli to an exact version\n\nThe release step runs sentry-cli with SENTRY_AUTH_TOKEN in env, so a floating\n^2 range would run whatever 2.x is published next with that token.\n\nAlso run commitlint through pnpm exec in the commit-msg hook: npx resolved the\nrelative husky PATH shim against the wrong directory and failed every commit.\n\nCloses #1531\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(applications): surface resolved status errors and mirror rust url normalization\n\nuseSetApplicationStatus now throws when applications_set_status resolves\n{ error }, so every caller's onError fires instead of treating a failed change\nas success (#1522). normalizeJobUrl now strips control characters and uses\nRust's trim set, matching normalize_job_url (#1523).\n\nCloses #1522\nCloses #1523\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(documents): record the résumé template on tailor exports\n\nPipelineRunDetail now carries the job's ai_generations row id, and the Tailor\nexport passes it to exportAndSave like the Documents card and AI Generate do.\n\nCloses #1541\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(crash-reporting): redact spaced home paths and basename debug image paths\n\nredact_event reduces debug_meta image paths to their basename, and\nredact_tokens keeps a spaced home-folder user segment in one token so it is\nredacted whole instead of leaking the part after the space.\n\nCloses #1530\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(export): accept every market id as an export locale\n\ntarget_lang maps market ids to their language (intl/uk/us to en, ch/at to de,\nbr to pt, ...) instead of handing Typst a non-language lang tag, which failed\nthe render for intl and mislabelled uk as ukrainian.\n\nCloses #1552\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(job-analysis): drop benefits sections before keyword extraction\n\nPerks such as own hardware or bike leasing are what the employer offers, not\nrequirements. Keyword extraction now skips benefits / what-we-offer sections\n(EN, DE, FR, ES, IT, PT, NL headings) and the analysis prompt says so too.\n\nCloses #1554\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(generation): restore a dropped projects section from the source résumé\n\nWhen the draft has no Projects section but the source does, append the\nsource's own section verbatim and record projects_restored_from_source on the\ndraft stage artifact instead of silently dropping it.\n\nCloses #1549\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(crash-reporting): redact any home-path user segment whole\n\nDrop the three-word cap and the closing-separator requirement: the user\nsegment now runs to the next separator, quote, line break or end of text, and\nuses the tokenizer's whitespace so an NBSP cannot split it.\n\nRefs #1530\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* test(generation): move projects-restore tests into their own file\n\nKeeps pipeline/resume/tests/draft.rs under the R8 line cap.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* build(deps): bump cookie to 0.18.3 and url to 2.5.9\n\nClears RUSTSEC-2026-0594 (cookie) and RUSTSEC-2026-0592 (url), published since\nthe last push; cargo deny check advisories blocked every branch.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(documents): show a notice when the draft restored the source projects\n\nThe Tailor flow reads projects_restored_from_source off the persisted draft\nstage event and shows a localized notice. The analysis prompt's benefits\nexclusion now applies at every depth (brief, task and full).\n\nRefs #1549, #1554\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix: address review findings on benefits filter, redactor and projects restore\n\n- benefits filter: plain Skills/Label: headings end the section, nested\n  headings stay inside it, and escaped HTML is decoded before filtering\n- redactor: an apostrophe inside a profile name no longer ends the segment\n- projects restore runs once on the draft actually kept, after the language\n  check, so appended source text cannot skew the retry decision\n\nRefs #1530, #1549, #1554\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T11:39:55+01:00",
+          "tree_id": "0e6ac19170338cc4ad7e39a6f0fc2a2d0c38ba75",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/658ee9546b96bc2fa652355ffd882d3476d692c2"
+        },
+        "date": 1795517938343,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1367223,
+            "range": "± 56831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 1599616,
+            "range": "± 29515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 248703,
+            "range": "± 3580",
             "unit": "ns/iter"
           }
         ]
