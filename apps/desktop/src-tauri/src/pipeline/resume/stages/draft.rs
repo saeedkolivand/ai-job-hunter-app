@@ -67,6 +67,8 @@ use crate::pipeline::{Completer, Stage};
 
 use super::cover_letter::{take_brief, LetterJob, LETTER_STAGE};
 use super::letter_ahead::{beside, can_overlap, write_traced, Route};
+use super::sections;
+use crate::pipeline::resume::types::SectionKey;
 use crate::validate::content::document_language_mismatch;
 
 pub struct Draft;
@@ -423,5 +425,33 @@ pub(crate) fn apply_projects_normalization(source_resume: &str, text: String) ->
     if let Some(reason) = skipped {
         artifact["projectsNormalizeSkipped"] = json!(reason);
     }
+    let (draft, restored) = restore_missing_projects(source_resume, draft);
+    if restored {
+        // Content-free warning code (ADR-027): surfaced on the stage event.
+        artifact["warnings"] = json!(["projects_restored_from_source"]);
+        artifact["chars"] = json!(draft.chars().count());
+        artifact["lines"] = json!(draft.lines().count());
+    }
     (draft, artifact)
+}
+
+/// A draft with NO Projects section while the source has one (small local
+/// models drop it, #1549) gets the source's own section appended verbatim —
+/// never fabricated. A draft that has a Projects section is left alone.
+fn restore_missing_projects(source_resume: &str, draft: String) -> (String, bool) {
+    let has_projects =
+        |text: &str| sections::find(&sections::split(text), SectionKey::Projects).cloned();
+    if has_projects(&draft).is_some() {
+        return (draft, false);
+    }
+    let Some(section) = has_projects(source_resume) else {
+        return (draft, false);
+    };
+    let lines: Vec<&str> = source_resume.lines().collect();
+    let block = section.text(&lines);
+    if block.trim().is_empty() {
+        return (draft, false);
+    }
+    let restored = format!("{}\n\n{}\n", draft.trim_end(), block.trim_end());
+    (restored, true)
 }
