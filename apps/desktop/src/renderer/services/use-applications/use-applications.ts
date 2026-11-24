@@ -44,8 +44,13 @@ export const useSetApplicationStatus = () => {
   const api = useAppClient();
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, status, note }: { id: string; status: string; note?: string }) =>
-      api.applications.setStatus({ id, status, note }),
+    mutationFn: async ({ id, status, note }: { id: string; status: string; note?: string }) => {
+      const res = await api.applications.setStatus({ id, status, note });
+      // `applications_set_status` resolves `{ error }` instead of rejecting — throw so
+      // `onError` fires for every caller.
+      if (res.error) throw new Error(res.error);
+      return res;
+    },
     onSuccess: (_data, { id }) => {
       invalidateApplications(qc);
       void qc.invalidateQueries({ queryKey: keys.applications.detail(id) });

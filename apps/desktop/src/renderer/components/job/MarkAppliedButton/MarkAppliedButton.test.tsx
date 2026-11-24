@@ -33,8 +33,9 @@ describe('MarkAppliedButton', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('applications.detail.markAppliedError');
   });
 
-  it('shows an error, not a confirmation, when the call resolves { error }', () => {
-    mutate.mockImplementationOnce(resolveWith({ error: 'x' }));
+  it('shows an error, not a confirmation, when the command reports { error }', () => {
+    // the hook throws on a resolved `{ error }`, so it surfaces through onError
+    mutate.mockImplementationOnce((_v: unknown, o?: Opts) => o?.onError?.());
     const { rerender } = render(<MarkAppliedButton applicationId="a1" status="saved" />);
     fireEvent.click(screen.getByRole('button', BTN));
     expect(screen.getByRole('alert')).toBeInTheDocument();
@@ -88,7 +89,8 @@ describe('MarkAppliedButton', () => {
   });
 
   it('allows a retry after a failure', () => {
-    mutate.mockImplementationOnce(resolveWith({ error: 'x' }));
+    // the hook throws on a resolved `{ error }`, so it surfaces through onError
+    mutate.mockImplementationOnce((_v: unknown, o?: Opts) => o?.onError?.());
     render(<MarkAppliedButton applicationId="a1" status="saved" />);
     fireEvent.click(screen.getByRole('button', BTN));
     expect(screen.getByRole('button', BTN)).toBeEnabled();

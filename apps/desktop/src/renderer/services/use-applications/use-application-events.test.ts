@@ -10,7 +10,7 @@ import {
 
 import { keys } from '../query-client';
 import * as useApplicationsModule from './use-applications';
-import { useApplicationEvents } from './use-applications';
+import { useApplicationEvents, useSetApplicationStatus } from './use-applications';
 
 describe('use-applications service hooks smoke', () => {
   it('renders every hook without throwing and exercises mutations', async () => {
@@ -139,5 +139,20 @@ describe('useApplicationEvents', () => {
     unmount();
 
     expect(off).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useSetApplicationStatus', () => {
+  it('rejects and fires onError when the command resolves { error }', async () => {
+    const setStatus = vi.fn().mockResolvedValue({ error: 'not found' });
+    const client = createMockClient({ 'applications.setStatus': setStatus });
+    const { result } = renderHookWithClient(() => useSetApplicationStatus(), { client });
+    const onSuccess = vi.fn();
+    const onError = vi.fn();
+    act(() => {
+      result.current.mutate({ id: 'a1', status: 'applied' }, { onSuccess, onError });
+    });
+    await vi.waitFor(() => expect(onError).toHaveBeenCalledTimes(1));
+    expect(onSuccess).not.toHaveBeenCalled();
   });
 });

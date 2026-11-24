@@ -51,9 +51,7 @@ export function MarkAppliedButton({ applicationId, status, size }: MarkAppliedBu
           setStatus.mutate(
             { id: applicationId, status: 'applied' },
             {
-              // The command resolves `{ error }` on failure (it never rejects), so
-              // `onError` only covers transport failures.
-              onSuccess: (data) => (data.error ? setFailed(true) : setDone(true)),
+              onSuccess: () => setDone(true),
               onError: () => setFailed(true),
             }
           );

@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { canonicalJobKey } from './canonical-job-key';
+import { canonicalJobKey, normalizeJobUrl } from './canonical-job-key';
 
 // U+0001 (SOH) fallback-key separator — matches KEY_SEP in the impl and Rust's `\u{1}`.
 const SEP = String.fromCharCode(1);
@@ -134,5 +134,28 @@ describe('canonicalJobKey — URL normalization details (mirror normalize_job_ur
     expect(
       canonicalJobKey('https://news.ycombinator.com/item?utm_source=x&id=44100001', 'BE', 'Acme')
     ).toBe(a);
+  });
+});
+
+// Verbatim from `applications/job_url/tests.rs` (control-character truth table).
+describe('normalizeJobUrl — Rust control-character parity', () => {
+  it('cannot smuggle a scheme past the guard via embedded controls', () => {
+    expect(normalizeJobUrl('java\nscript:alert(1)')).toBe('');
+    expect(normalizeJobUrl('java\tscript:alert(1)')).toBe('');
+    expect(normalizeJobUrl('java\rscript:alert(1)')).toBe('');
+    expect(normalizeJobUrl('ja\u0000vascript:alert(1)')).toBe('');
+    expect(normalizeJobUrl('da\u007Fta:text/html,x')).toBe('');
+  });
+
+  it('removes controls elsewhere, trims exposed whitespace, control-only is empty', () => {
+    expect(normalizeJobUrl('https://example.com/job/\u00001')).toBe('https://example.com/job/1');
+    expect(normalizeJobUrl('https://x.com/jobs/12\t3')).toBe('https://x.com/jobs/123');
+    expect(normalizeJobUrl('\u0000 https://example.com/job/1')).toBe('https://example.com/job/1');
+    expect(normalizeJobUrl('\u0000\u0001')).toBe('');
+  });
+
+  it("uses Rust's trim set: keeps U+FEFF, strips U+0085 and NBSP", () => {
+    expect(normalizeJobUrl('\uFEFFexample.com/a')).toBe('\ufeffexample.com/a');
+    expect(normalizeJobUrl('\u0085\u00A0example.com/a\u3000')).toBe('example.com/a');
   });
 });

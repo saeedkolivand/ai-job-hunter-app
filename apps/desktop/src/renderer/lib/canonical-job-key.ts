@@ -78,6 +78,23 @@ function retainIdentifyingParams(host: string, query: string): string {
 }
 
 /**
+ * Rust `str::trim` set (Unicode White_Space). Differs from JS `trim()`: keeps
+ * U+FEFF (BOM) and also strips U+0085 (NEL).
+ */
+const RUST_WS = '\t-\r \u0085\u00A0\u1680\u2000-\u200A\u2028\u2029\u202F\u205F\u3000';
+const RUST_TRIM = new RegExp(`^[${RUST_WS}]+|[${RUST_WS}]+$`, 'g');
+const rustTrim = (s: string): string => s.replace(RUST_TRIM, '');
+
+/** Mirrors Rust `strip_controls`: remove U+0000-U+001F and U+007F. */
+const stripControls = (s: string): string =>
+  [...s]
+    .filter((c) => {
+      const n = c.charCodeAt(0);
+      return n > 0x1f && n !== 0x7f;
+    })
+    .join('');
+
+/**
  * Normalize a job URL into a stable identity string. Mirrors Rust
  * `normalize_job_url`: rejects any non-`http(s)` explicit scheme to `""`;
  * lowercases the whole URL; strips a leading `www.` on the host; drops the
@@ -85,7 +102,7 @@ function retainIdentifyingParams(host: string, query: string): string {
  * trailing `/` on the path. Empty/blank input → `""`.
  */
 export function normalizeJobUrl(url: string): string {
-  const trimmed = url.trim();
+  const trimmed = rustTrim(stripControls(rustTrim(url)));
   if (trimmed === '') return '';
 
   // Reject dangerous explicit schemes at the single chokepoint: only http(s) round-trips.
