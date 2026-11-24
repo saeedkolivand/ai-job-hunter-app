@@ -5,6 +5,7 @@ import type {
   AutopilotAvailabilityCheck,
   AutopilotAvailabilitySource,
   AutopilotGhostSignals,
+  AutopilotNoteFit,
   AutopilotRunStatus,
   JobTrustAssessment,
 } from '../../types/index.js';
@@ -159,7 +160,7 @@ export interface AutopilotBestMatchSource {
  * board copies — that completeness is what lets a dismissal match against
  * any member's own identity, not only the row's displayed one.
  */
-export interface AutopilotBestMatch {
+export interface AutopilotBestMatch extends AutopilotNoteFit {
   /** Cluster id — usually stable across refetches, but the seed is chosen
    *  over the UNION of every non-archived autopilot's found jobs, so
    *  creating or archiving an autopilot can re-seed a block and change

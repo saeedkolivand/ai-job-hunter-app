@@ -58,6 +58,9 @@ pub(super) struct FoundJobSlice {
     /// text, fenced by [`project_found_job_row`] like the row's own display fields.
     #[serde(skip_serializing_if = "Option::is_none")]
     identity_review: Option<IdentityReviewSlice>,
+    /// Structured fit (#1446); the lists are fenced by [`project_found_job_row`]'s display pass.
+    #[serde(flatten)]
+    fit: super::job::AgentFit,
 }
 
 /// Compact subset of `posting_history::GhostSignals` — see [`FoundJobSlice::ghost_signals`].

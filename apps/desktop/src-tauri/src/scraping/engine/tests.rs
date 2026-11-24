@@ -19,6 +19,7 @@ mod location_post_filter_cap_interaction;
 mod location_post_filter_live_stream_agreement;
 mod needs_company_skip;
 mod panickers;
+mod queued_permit;
 mod required_board_skip_edge_cases;
 mod required_board_skip_reasons;
 mod run_boards;

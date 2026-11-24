@@ -136,6 +136,7 @@ async fn watched_overrides_route_per_ats_and_skip_boards_without_stars() {
                 other => Err(anyhow::anyhow!("unexpected board {other}")),
             },
             Some(&overrides),
+            None,
         )
         .await
         .expect("watched run must return Ok");
@@ -196,6 +197,7 @@ async fn watched_overrides_keep_each_board_list_pure_no_foreign_crowding() {
                 other => Err(anyhow::anyhow!("unexpected board {other}")),
             },
             Some(&overrides),
+            None,
         )
         .await
         .expect("watched run must return Ok");
@@ -239,6 +241,7 @@ async fn watched_override_present_but_empty_is_treated_as_absent() {
             tmp.path(),
             |_id| Ok(&*GH as &'static dyn Scraper),
             Some(&overrides),
+            None,
         )
         .await
         .expect("run must return Ok");

@@ -425,7 +425,24 @@ export interface Autopilot {
 }
 
 /** A job posting surfaced by an autopilot run. */
-export interface AutopilotFoundJob {
+/** Deterministic fit of a candidate against an ad (#1446), never inferred from the keyword score.
+ *  `explicitGap` = an unmet must-have; `unknown` = nothing recognisable to check, no usable résumé,
+ *  or a must-have the résumé cannot confirm; `stretch` = only an unmet preference; else `supportedFit`. */
+export type AutopilotFitCategory = 'supportedFit' | 'stretch' | 'explicitGap' | 'unknown';
+
+/** Structured fit stored beside an AI note. All fields absent on a job with no note. */
+export interface AutopilotNoteFit {
+  /** Must-haves the résumé evidences at a lower level than the ad demands. */
+  mandatoryGaps?: string[];
+  /** Must-haves the résumé cannot confirm either way (unknown, not a gap). */
+  toVerify?: string[];
+  fitCategory?: AutopilotFitCategory;
+  /** The résumé or the job description changed since the note was written (or the note predates
+   *  its version stamp), so the note and fit may be out of date. Derived on read. */
+  notesStale?: boolean;
+}
+
+export interface AutopilotFoundJob extends AutopilotNoteFit {
   title: string;
   company: string;
   url: string;

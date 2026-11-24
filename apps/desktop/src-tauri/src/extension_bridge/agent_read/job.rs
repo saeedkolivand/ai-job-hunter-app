@@ -78,6 +78,19 @@ pub(in crate::extension_bridge::agent_read) struct AgentGhostSignals {
     reposted: bool,
 }
 
+/// Deterministic fit facts of a found job (#1446), shared by every curated projection. The two
+/// lists carry ad-derived text, so [`super::best_matches::fence_posting_display_fields`] fences them.
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(in crate::extension_bridge::agent_read) struct AgentFit {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    mandatory_gaps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    to_verify: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fit_category: Option<crate::autopilot::FitCategory>,
+}
+
 /// `job` resource payload — projected off `autopilot::FoundJob`. Excludes
 /// `assistantNotes` (forbidden), `clusterId`/`clusterCanonical` (internal
 /// grouping detail with no meaning off this surface).
@@ -117,6 +130,8 @@ pub(in crate::extension_bridge::agent_read) struct AgentJob {
     trust: Option<AgentTrust>,
     #[serde(skip_serializing_if = "Option::is_none")]
     ghost_signals: Option<AgentGhostSignals>,
+    #[serde(flatten)]
+    fit: AgentFit,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     cluster_members: Vec<AgentClusterMember>,
 }

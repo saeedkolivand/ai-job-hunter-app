@@ -250,12 +250,13 @@ impl BridgeState {
 /// socket it opened before it — and return both opt-ins to their default OFF
 /// (consent must be re-granted).
 impl crate::data_store::Resettable for BridgeState {
-    fn reset(&self) {
+    fn reset(&self) -> crate::error::AppResult<()> {
         self.regenerate_token();
         self.set_autofill_enabled(false);
         self.set_ai_assist(false);
         self.set_autotrack_enabled(false);
         self.set_save_answers_on_submit_enabled(false);
+        Ok(())
     }
 }
 

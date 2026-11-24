@@ -21,7 +21,7 @@ use std::collections::{HashMap, HashSet};
 
 use serde::Serialize;
 
-use crate::autopilot::{Autopilot, AutopilotStatus, FoundJob, ScoreSource};
+use crate::autopilot::{Autopilot, AutopilotStatus, FoundJob, NoteSnapshot, ScoreSource};
 use crate::ipc_contracts::match_tiers::{MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COVERAGE_HIGH};
 use crate::scraping::availability::{Availability, AvailabilityEvidence};
 use crate::scraping::cluster::{assign_clusters, ClusterMemberRef};
@@ -106,6 +106,9 @@ pub(super) struct BestMatchRow {
     pub(super) ghost_signals: Option<crate::posting_history::GhostSignals>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) assistant_notes: Option<String>,
+    /// Structured fit beside the note (#1446): gaps, to-verify, category, staleness.
+    #[serde(flatten)]
+    pub(super) fit: crate::autopilot::NoteFitView,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(super) cluster_members: Vec<ClusterMemberRef>,
     pub(super) sources: Vec<BestMatchSource>,
@@ -209,7 +212,7 @@ pub(super) fn compute_best_matches(
     let mut key_order: Vec<String> = Vec::new();
     let mut by_key: HashMap<String, (&FoundJob, Vec<Origin>)> = HashMap::new();
     // First note carried by ANY copy of a key, so a note on a dropped duplicate copy survives.
-    let mut copy_notes: HashMap<String, String> = HashMap::new();
+    let mut copy_notes: HashMap<String, NoteSnapshot> = HashMap::new();
     let mut dead_urls: HashSet<String> = HashSet::new();
     for ap in records
         .iter()
@@ -234,8 +237,8 @@ pub(super) fn compute_best_matches(
                 paused,
                 found_at: job.found_at,
             };
-            if let Some(n) = &job.assistant_notes {
-                copy_notes.entry(key.clone()).or_insert_with(|| n.clone());
+            if let Some(n) = NoteSnapshot::of(job) {
+                copy_notes.entry(key.clone()).or_insert(n);
             }
             match by_key.get_mut(&key) {
                 Some((kept, origins)) => {
@@ -363,15 +366,12 @@ pub(super) fn compute_best_matches(
         // which on a merged cross-autopilot row can be a different
         // autopilot's résumé/provider context entirely, with no provenance
         // on the payload to say so.
-        let note_of = |i: usize| {
-            jobs[i]
-                .assistant_notes
-                .clone()
-                .or_else(|| copy_notes.get(&key_order[i]).cloned())
-        };
-        let assistant_notes = note_of(canonical_idx)
+        let note_of =
+            |i: usize| NoteSnapshot::of(jobs[i]).or_else(|| copy_notes.get(&key_order[i]).cloned());
+        let note = note_of(canonical_idx)
             .or_else(|| note_of(best_idx))
-            .or_else(|| idxs.iter().find_map(|&i| note_of(i)));
+            .or_else(|| idxs.iter().find_map(|&i| note_of(i)))
+            .unwrap_or_default();
 
         // One `BestMatchSource` per distinct contributing autopilot — a
         // `BTreeMap` (not `HashMap`) so a cluster whose members span the same
@@ -427,7 +427,8 @@ pub(super) fn compute_best_matches(
             is_agency: assignments[canonical_idx].is_agency,
             trust: canonical.trust.clone(),
             ghost_signals: canonical.ghost_signals.clone(),
-            assistant_notes,
+            assistant_notes: note.notes,
+            fit: note.fit,
             cluster_members: members.clone(),
             sources,
         });

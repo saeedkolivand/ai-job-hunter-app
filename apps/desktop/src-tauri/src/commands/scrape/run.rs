@@ -260,6 +260,10 @@ pub async fn scrape_boards(app: AppHandle, req: ScrapeBoardsRequest) -> Value {
                 job_id_clone.clone(),
                 Some(on_progress),
                 Some(on_item),
+                Some(crate::commands::jobs::scrape_queue_hook(
+                    &app_clone,
+                    &job_id_clone,
+                )),
             )
             .await;
 

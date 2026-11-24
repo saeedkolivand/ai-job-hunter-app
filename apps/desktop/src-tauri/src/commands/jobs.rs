@@ -106,6 +106,17 @@ pub fn job_dequeued(app: &AppHandle, id: &str) {
     emit_job_event(app, "job.started", id, None);
 }
 
+/// The scraper-engine permit wait as job status: parked → [`job_queued`],
+/// granted → [`job_dequeued`]. Handed to `ScraperEngine::scrape_boards*`.
+pub fn scrape_queue_hook(app: &AppHandle, id: &str) -> crate::scraping::engine::QueueHook {
+    use crate::scraping::engine::QueueEvent;
+    let (app, id) = (app.clone(), id.to_string());
+    std::sync::Arc::new(move |event| match event {
+        QueueEvent::Parked { ahead } => job_queued(&app, &id, ahead),
+        QueueEvent::Granted => job_dequeued(&app, &id),
+    })
+}
+
 /// Update a job's progress (0.0–1.0) and emit `job.progress`.
 pub fn job_progress(app: &AppHandle, id: &str, p: f64) {
     app.state::<Mutex<JobTracker>>()

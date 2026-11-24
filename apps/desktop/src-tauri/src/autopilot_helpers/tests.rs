@@ -4,6 +4,7 @@
 
 mod debug_wrapper;
 mod diagnostics;
+mod fit_notes;
 mod notes;
 mod redaction;
 mod watched_companies;

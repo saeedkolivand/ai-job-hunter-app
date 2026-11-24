@@ -30,7 +30,7 @@ fn reset_rotates_token() {
     use crate::data_store::Resettable;
     let (_dir, s) = bridge_state();
     let before = s.token();
-    s.reset();
+    s.reset().unwrap();
     assert_ne!(s.token(), before, "factory reset rotates the pairing token");
 }
 
@@ -92,7 +92,7 @@ fn reset_disables_every_optin() {
     for flag in OPTIN_FLAGS {
         let (_dir, s) = bridge_state();
         (flag.set)(&s, true);
-        s.reset();
+        s.reset().unwrap();
         assert!(!(flag.get)(&s), "{}", flag.reset_message);
     }
 }

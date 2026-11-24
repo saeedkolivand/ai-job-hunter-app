@@ -160,6 +160,16 @@ pub(super) fn merge_found_jobs(existing: &[FoundJob], incoming: Vec<FoundJob>) -
                 if inc.ghost_signals.is_some() {
                     row.ghost_signals = inc.ghost_signals.clone();
                 }
+                // A note only rides on a re-surfaced posting when the loop regenerated it
+                // because its résumé/description stamp went stale (#1446): the note and its
+                // fit move together, never one without the other.
+                if inc.assistant_notes.is_some() {
+                    row.assistant_notes = inc.assistant_notes.clone();
+                    row.mandatory_gaps = inc.mandatory_gaps.clone();
+                    row.to_verify = inc.to_verify.clone();
+                    row.fit_category = inc.fit_category;
+                    row.notes_basis = inc.notes_basis.clone();
+                }
             }
             row
         })

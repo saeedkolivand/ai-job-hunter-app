@@ -192,11 +192,9 @@ pub(super) async fn assistant_notes_step(
     // not the raw URL. A job that re-surfaces under different tracking params is
     // the same job to the merge, so keying on the raw URL paid for a note the
     // merge then discarded, every single run.
-    let prior_keys: std::collections::HashSet<String> = autopilot
-        .found_jobs
-        .iter()
-        .map(|j| crate::scraping::boards::common::canonical_job_key(&j.url, &j.title, &j.company))
-        .collect();
+    // EXCEPT a prior job whose note's résumé/description stamp went stale (#1446): that one
+    // regenerates, and the merge adopts the new note.
+    let prior_keys = crate::autopilot_helpers::settled_note_keys(autopilot, found_jobs);
 
     // Resolve the active provider from the BACKEND-OWNED store (task #16) through
     // the SAME centralized layer `ai_generate` uses — no longer from the per-record

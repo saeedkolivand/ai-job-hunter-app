@@ -109,6 +109,7 @@ async fn scrape_boards_real_entrypoint_caps_and_dedupes() {
             "test-job-cap".to_string(),
             None,
             None,
+            None,
         )
         .await;
 
@@ -177,6 +178,7 @@ async fn scrape_boards_all_failed_and_cancelled_returns_err() {
             &boards,
             fake_input(5),
             "job-cancel-all-fail".to_string(),
+            None,
             None,
             None,
         )

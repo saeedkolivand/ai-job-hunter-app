@@ -16,10 +16,12 @@ fn job_projection_has_exact_keys_and_drops_forbidden_fields() {
             "clusterMembers",
             "company",
             "description",
+            "fitCategory",
             "foundAt",
             "isAgency",
             "isNew",
             "location",
+            "mandatoryGaps",
             "postedAt",
             "salaryCurrency",
             "salaryMax",
@@ -28,6 +30,7 @@ fn job_projection_has_exact_keys_and_drops_forbidden_fields() {
             "scoreProvisional",
             "scoreSource",
             "title",
+            "toVerify",
             "trust",
             "url",
         ]
@@ -74,7 +77,13 @@ fn job_projection_carries_ghost_signals_when_present_and_omits_when_absent() {
 fn job_projection_never_carries_forbidden_keys() {
     let value = project_value::<_, AgentJob>(&full_found_job()).expect("projects");
     let text = value.to_string();
-    for forbidden in ["assistantNotes", "clusterId", "clusterCanonical"] {
+    for forbidden in [
+        "assistantNotes",
+        "clusterId",
+        "clusterCanonical",
+        "notesStale",
+        "notesBasis",
+    ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}");
     }
 }

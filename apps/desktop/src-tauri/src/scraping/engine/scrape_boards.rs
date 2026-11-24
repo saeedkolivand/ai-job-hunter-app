@@ -15,7 +15,7 @@ use std::sync::Arc;
 use crate::scraping::types::{BoardSearchInput, JobPosting, Scraper};
 
 use super::dedup::dedup_cross_source;
-use super::{BoardScrapeSummary, ScraperEngine};
+use super::{BoardScrapeSummary, QueueHook, ScraperEngine};
 
 mod fan_out_sinks;
 mod requested_filters;
@@ -43,18 +43,16 @@ impl ScraperEngine {
         job_id: String,
         on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        queue_hook: Option<QueueHook>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
-        self.scrape_boards_with_resolver(
+        self.scrape_boards_with_overrides_queued(
             boards,
             input,
             job_id,
             on_progress,
             on_item,
-            &crate::platform::config::data_dir(),
-            |id| {
-                crate::scraping::boards::get(id)
-                    .ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"))
-            },
+            None,
+            queue_hook,
         )
         .await
     }
@@ -76,6 +74,31 @@ impl ScraperEngine {
         on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
         company_overrides: Option<&HashMap<String, Vec<String>>>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
+        self.scrape_boards_with_overrides_queued(
+            boards,
+            input,
+            job_id,
+            on_progress,
+            on_item,
+            company_overrides,
+            None,
+        )
+        .await
+    }
+
+    /// [`scrape_boards_with_overrides`] plus a [`QueueHook`] that is told when
+    /// the call has to wait for an engine permit (see `permit.rs`).
+    #[allow(clippy::too_many_arguments)]
+    pub async fn scrape_boards_with_overrides_queued(
+        &self,
+        boards: &[String],
+        input: BoardSearchInput,
+        job_id: String,
+        on_progress: Option<Arc<dyn Fn(f32) + Send + Sync>>,
+        on_item: Option<Arc<dyn Fn(JobPosting) + Send + Sync>>,
+        company_overrides: Option<&HashMap<String, Vec<String>>>,
+        queue_hook: Option<QueueHook>,
+    ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
         self.scrape_boards_with_resolver_and_overrides(
             boards,
             input,
@@ -88,6 +111,7 @@ impl ScraperEngine {
                     .ok_or_else(|| anyhow::anyhow!("Unknown board: {id}"))
             },
             company_overrides,
+            queue_hook,
         )
         .await
     }
@@ -99,6 +123,7 @@ impl ScraperEngine {
     /// Signature preserved (no `company_overrides`) so existing engine tests are
     /// untouched; delegates with `None` (curated `ats_seed` behavior).
     #[doc(hidden)]
+    #[cfg(test)]
     pub(crate) async fn scrape_boards_with_resolver<F>(
         &self,
         boards: &[String],
@@ -120,6 +145,7 @@ impl ScraperEngine {
             on_item,
             data_dir,
             resolve,
+            None,
             None,
         )
         .await
@@ -148,6 +174,7 @@ impl ScraperEngine {
         data_dir: &std::path::Path,
         resolve: F,
         company_overrides: Option<&HashMap<String, Vec<String>>>,
+        queue_hook: Option<QueueHook>,
     ) -> anyhow::Result<(Vec<JobPosting>, Vec<BoardScrapeSummary>)>
     where
         F: Fn(&str) -> anyhow::Result<&'static dyn Scraper>,
@@ -157,18 +184,23 @@ impl ScraperEngine {
             return Err(anyhow::anyhow!("at least one board is required"));
         }
 
-        // Bound concurrency — one engine permit for the whole multi-board batch.
-        let sem = self.semaphore.load_full();
-        let _permit = sem
-            .acquire_owned()
-            .await
-            .map_err(|_| anyhow::anyhow!("scraper engine semaphore closed"))?;
-
         // F2/F5 — reuse a pre-registered token (Autopilot pre-registers its own
         // token for the whole run) or mint a fresh one. Track whether WE minted it
         // so we only remove the slot when we own it — a pre-registered token is
         // managed by the caller (Autopilot calls `unregister_token` itself).
+        // Taken BEFORE the permit wait so a Stop while parked reaches it.
         let (parent, we_minted) = self.jobs.get_or_register(&job_id).await;
+
+        // Bound concurrency — one engine permit for the whole multi-board batch.
+        let _permit = match self.acquire_permit(&parent, queue_hook.as_ref()).await {
+            Ok(p) => p,
+            Err(e) => {
+                if we_minted {
+                    self.jobs.unregister(&job_id).await;
+                }
+                return Err(e);
+            }
+        };
 
         // Phase: resolve + dedupe the caller's board list.
         let ResolvedBoards {

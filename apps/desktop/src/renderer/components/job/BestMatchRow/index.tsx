@@ -1,4 +1,4 @@
-import { Bookmark, ExternalLink, ShieldCheck, Sparkles, Wand2, X } from 'lucide-react';
+import { Bookmark, ExternalLink, ShieldCheck, Wand2, X } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 
 import type { AutopilotBestMatch, AutopilotBestMatchSource } from '@ajh/shared';
@@ -6,6 +6,7 @@ import { type TFunction, useTranslation } from '@ajh/translations';
 import { Button, cn, Tag } from '@ajh/ui';
 
 import { AgencyChip } from '@/components/job/AgencyChip';
+import { AiNote } from '@/components/job/AiNote';
 import { ClusterSourceChips } from '@/components/job/ClusterSourceChips';
 import { GhostBadge } from '@/components/job/GhostBadge';
 import { ROUTES } from '@/constants/routes';
@@ -233,26 +234,7 @@ export function BestMatchRow({
 
       {/* LLM-generated — plain text only, never markdown/HTML. Same treatment
           as AutopilotCard's AI note (index.tsx:882-901). */}
-      {!compact && match.assistantNotes && (
-        <div
-          role="note"
-          aria-label={t('autopilot.aiNote')}
-          className="ml-0.5 flex items-start gap-1.5 rounded-lg border border-brand/15 bg-brand/5 px-2.5 py-1.5"
-        >
-          <Sparkles size={10} className="mt-0.5 shrink-0 text-brand-soft" />
-          <div className="min-w-0 flex-1">
-            <span className="block text-fine-print font-semibold uppercase tracking-wide text-brand-soft">
-              {t('autopilot.aiNote')}
-            </span>
-            <p
-              title={match.assistantNotes}
-              className="line-clamp-2 text-[10px] leading-relaxed text-foreground/70"
-            >
-              {match.assistantNotes}
-            </p>
-          </div>
-        </div>
-      )}
+      {!compact && match.assistantNotes && <AiNote notes={match.assistantNotes} fit={match} />}
     </div>
   );
 }

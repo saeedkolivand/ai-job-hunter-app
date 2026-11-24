@@ -990,6 +990,7 @@
       "resetAppConfirmDescription": "This will sign you out of all accounts, delete all cached data and job history, and reset all preferences. Any paired browser is disconnected, so you will need to pair the extension again. You will be taken back to the welcome screen. This cannot be undone.",
       "resetAppConfirm": "Reset Everything",
       "resetAppPartial": "App reset, but some board login sessions couldn't be fully cleared.",
+      "resetAppIncomplete": "App reset, but some data could not be cleared. Please retry the reset or restart the app.",
       "somethingWentWrong": "Something went wrong.",
       "signedOutSuccess": "Signed out of all accounts. Reconnect via Settings → Accounts.",
       "historyClearedSuccess": "Interaction history cleared.",
@@ -2012,6 +2013,17 @@
       "dismissFailed": "Could not dismiss the review. Try again."
     },
     "aiNote": "AI note",
+    "fit": {
+      "category": {
+        "supportedFit": "Supported fit",
+        "stretch": "Stretch",
+        "explicitGap": "Explicit gap",
+        "unknown": "Unknown"
+      },
+      "gapsLabel": "Unmet must-have",
+      "verifyLabel": "To verify (must-have)",
+      "stale": "May be out of date: your résumé or the posting changed since this note was written."
+    },
     "provisionalScoreHint": "Estimated from limited text — open the job for the exact match score.",
     "scoreLabel": {
       "coverage": "Keyword Coverage %",

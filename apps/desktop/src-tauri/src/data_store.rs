@@ -169,6 +169,7 @@ pub(crate) use single_object_sync_section;
 /// Pure by design (no Tauri here) so it can live in this shared-infra layer; the
 /// `AppHandle`-resolving registry that calls `reset` lives in the shell layer.
 pub trait Resettable {
-    /// Clear all of the store's persisted contents.
-    fn reset(&self);
+    /// Clear all of the store's persisted contents. A store that cannot clear
+    /// returns its error so the factory reset can report it, never swallow it.
+    fn reset(&self) -> crate::error::AppResult<()>;
 }

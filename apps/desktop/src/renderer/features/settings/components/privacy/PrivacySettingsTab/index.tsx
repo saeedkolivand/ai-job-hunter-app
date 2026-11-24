@@ -17,6 +17,7 @@ import { useFetchCompanyLogos, usePreferencesStore } from '@/store/preferences-s
 
 import { SyncSection } from '../SyncSection';
 import { ActionCard, type ActionCardProps } from './ActionCard';
+import { resetAppWarningKey } from './reset-message';
 
 type ConfirmAction = 'signOut' | 'clearInteractions' | 'resetApp';
 
@@ -75,7 +76,8 @@ export function PrivacySettingsTab() {
       // which sets onboardingCompleted: false — the wizard re-mounts at welcome step.
       // A partial reset (success:false) still wiped the stores but left board login
       // sessions on disk — warn instead of silently reporting a clean reset.
-      if (!res.success) notify.error({ message: t('settings.privacy.resetAppPartial') });
+      const warningKey = resetAppWarningKey(res);
+      if (warningKey) notify.error({ message: t(warningKey) });
     } catch {
       notify.error({ message: t('settings.privacy.somethingWentWrong') });
     }

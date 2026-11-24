@@ -16,6 +16,8 @@ use crate::scraping::{BoardScrapeSummary, BoardSearchInput, JobPosting, ScraperE
 
 mod grounding;
 pub(crate) mod linkedin_enrich;
+mod settled;
+pub(crate) use settled::settled_note_keys;
 
 /// The "don't cap me" item cap an autopilot scrape runs with (see `amount`
 /// below); a board returning this many was cut off, not exhausted.
@@ -30,6 +32,7 @@ pub async fn autopilot_scrape(
     target: &AutopilotTarget,
     job_id: &str,
     app: &AppHandle,
+    queue_hook: crate::scraping::engine::QueueHook,
 ) -> AppResult<(Vec<JobPosting>, Vec<BoardScrapeSummary>)> {
     let input = BoardSearchInput {
         query: target.query.clone(),
@@ -92,11 +95,7 @@ pub async fn autopilot_scrape(
             let selected_company_boards: Vec<String> = target
                 .boards
                 .iter()
-                .filter(|b| {
-                    crate::scraping::boards::get(b)
-                        .map(|s| s.requires_company())
-                        .unwrap_or(false)
-                })
+                .filter(|b| crate::scraping::boards::get(b).is_some_and(|s| s.requires_company()))
                 .cloned()
                 .collect();
             Some(resolve_watched_companies(
@@ -130,13 +129,14 @@ pub async fn autopilot_scrape(
         });
 
     let result = engine
-        .scrape_boards_with_overrides(
+        .scrape_boards_with_overrides_queued(
             &target.boards,
             input,
             job_id.to_string(),
             Some(on_progress),
             Some(on_item),
             company_overrides.as_ref(),
+            Some(queue_hook),
         )
         .await;
 
@@ -420,11 +420,9 @@ async fn run_notes_loop(
         };
         match result {
             Ok(text) => {
-                // Capped, then deterministically grounded: no language level the résumé doesn't
-                // evidence, and the ad's unmet must-haves are always spelled out (#1446).
-                let note = grounding::finish_note(&text, resume, job.description.as_deref());
-                if !note.is_empty() {
-                    job.assistant_notes = Some(note);
+                // Capped, grounded (no language level the résumé doesn't evidence), stored with
+                // its structured fit and version stamp (#1446).
+                if grounding::apply_note(job, &text, resume) {
                     generated += 1;
                 }
             }
