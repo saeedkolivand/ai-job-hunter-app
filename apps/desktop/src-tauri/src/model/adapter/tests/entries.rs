@@ -193,3 +193,27 @@ December 2022 \u{2013} November 2025, K\u{f6}ln, Deutschland
     assert_eq!(entry.bullets.len(), 1);
     assert_eq!(flat(&entry.bullets[0]), "Built scalable applications");
 }
+
+/// #1564: a PDF that right-aligns the date column can lose that gap, gluing the
+/// date onto the company. The date holds only the range; the company stays in
+/// the entry, not in the date.
+#[test]
+fn a_date_glued_to_the_company_is_split_off() {
+    let resume = "\
+EXPERIENCE
+
+Senior Engineer  \u{b7}  Acme GmbH Dec 2022 \u{2013} Nov 2025
+- Led a team
+";
+    let m = model_from_resume_text(resume);
+    let e = entries(&m);
+    assert_eq!(e.len(), 1);
+    assert_eq!(e[0].date.as_deref(), Some("Dec 2022 \u{2013} Nov 2025"));
+    let title = flat(&e[0].title);
+    let subtitle = e[0].subtitle.as_ref().map(flat).unwrap_or_default();
+    assert!(title.contains("Senior Engineer"), "title: {title:?}");
+    assert!(
+        format!("{title} {subtitle}").contains("Acme GmbH"),
+        "company lost: title {title:?}, subtitle {subtitle:?}"
+    );
+}

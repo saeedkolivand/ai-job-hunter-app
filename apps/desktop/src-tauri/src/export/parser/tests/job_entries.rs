@@ -236,3 +236,35 @@ fn skills_line_stays_text() {
         line.kind
     );
 }
+
+/// #1564: the date is split off where the range starts, not at the first gap,
+/// and only when the text in between is a company.
+#[test]
+fn gap_date_split_moves_only_over_a_company() {
+    let split = |l: &str| {
+        let p = parse_line(l, 5, &[]);
+        (p.kind, p.text, p.right_text)
+    };
+    let date = Some("Dec 2022 \u{2013} Nov 2025".to_string());
+    for line in [
+        "Senior Engineer  \u{b7}  Acme GmbH Dec 2022 \u{2013} Nov 2025",
+        "Senior Engineer  \u{b7}  Acme GmbH  \u{b7}  Dec 2022 \u{2013} Nov 2025",
+        "Senior Engineer  \u{b7}  Acme GmbH **Dec 2022** \u{2013} **Nov 2025**",
+    ] {
+        let (kind, text, right) = split(line);
+        assert!(matches!(kind, LineKind::JobEntry), "{line}");
+        assert_eq!(text, "Senior Engineer  \u{b7}  Acme GmbH", "{line}");
+        assert_eq!(right, date, "{line}");
+    }
+    // A month name inside a word does not open the range.
+    let (_, text, right) = split("Senior Engineer  \u{b7}  Novartis Dec 2022 \u{2013} Nov 2025");
+    assert_eq!(text, "Senior Engineer  \u{b7}  Novartis");
+    assert_eq!(right, date);
+    // A wrapper alone keeps the original split.
+    let (_, text, right) = split("Senior Engineer  (Dec 2022 \u{2013} Nov 2025)");
+    assert_eq!(text, "Senior Engineer");
+    assert_eq!(right.as_deref(), Some("(Dec 2022 \u{2013} Nov 2025)"));
+    // A phone before the date is a contact line, not a title.
+    let (kind, ..) = split("Berlin  |  +49 30 1234567  |  2021 \u{2013} Present");
+    assert!(!matches!(kind, LineKind::JobEntry));
+}

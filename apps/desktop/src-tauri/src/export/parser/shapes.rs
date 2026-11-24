@@ -21,6 +21,62 @@ pub(super) static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()
 });
 
+/// A numeric month written just before a year (`03/` in `03/2018`), which
+/// `DATE_RE` does not include because it starts matching at the year.
+static NUMERIC_MONTH_TAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b\d{1,2} ?[/.\-] ?$").unwrap());
+
+/// Split `line` at its first two-space gap into the raw title and the cleaned
+/// tail that may hold the date. The first gap is not always the date gap: a PDF
+/// that right-aligns the date column can lose that gap, giving `Role  ·  Company
+/// Dec 2022 – Nov 2025` (#1564). When the date does not open the tail, the split
+/// moves to where the date starts, so the company stays in the title and the
+/// date holds only the range.
+pub(super) fn split_gap_date(line: &str) -> Option<(&str, String)> {
+    let idx = line.find("  ")?;
+    let tail = line[idx..].trim_start();
+    // Measured on the raw tail (backing over an opening `**`) so a bold date
+    // still maps to its place in `line`.
+    let moved = date_start(tail)
+        .map(|s| tail[..s].trim_end_matches('*'))
+        .filter(|head| moves_split(head))
+        .map(|head| line.len() - tail.len() + head.len());
+    Some(match moved {
+        Some(cut) => (
+            line[..cut]
+                .trim_end()
+                .trim_end_matches(['·', '|', '•'])
+                .trim_end(),
+            super::strip_md(&line[cut..]),
+        ),
+        None => (&line[..idx], super::strip_md(tail)),
+    })
+}
+
+/// The text between the gap and the date joins the title only when it holds a
+/// word (not just a `(` wrapper) and no phone or URL, so a contact line keeps
+/// its original split.
+fn moves_split(head: &str) -> bool {
+    head.chars().any(char::is_alphanumeric)
+        && !head.split(['|', '·', '•']).any(is_contactish_segment)
+}
+
+/// A month name or year as a whole word, so `Nov` in `Novartis` opens no range.
+static DATE_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})\b").unwrap()
+});
+
+/// Byte offset where `text`'s date range begins: the first whole date token a
+/// [`DATE_RE`] range starts at, widened over a numeric month.
+fn date_start(text: &str) -> Option<usize> {
+    let start = DATE_TOKEN
+        .find_iter(text)
+        .map(|m| m.start())
+        .find(|&s| DATE_RE.find(&text[s..]).is_some_and(|m| m.start() == 0))?;
+    let head = &text[..start];
+    Some(NUMERIC_MONTH_TAIL.find(head).map_or(start, |p| p.start()))
+}
+
 // A pipe/middot segment that IS a standalone single date — a bare year or
 // "Month YYYY" (e.g. "2021", "Jan 2021"). Anchored so it matches only when the
 // whole segment is a date. Lets single-year entries (common for PROJECTS and
