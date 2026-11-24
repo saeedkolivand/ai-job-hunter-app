@@ -324,3 +324,35 @@ fn escaped_markup_in_a_stored_description_is_decoded_before_scoring() {
     assert!(!blob.contains("&lt;") && !blob.contains("<p>"), "{blob}");
     assert!(blob.contains("GitLab is the intelligent orchestration platform."));
 }
+
+// --- benefits sections never become keywords (#1554) ---
+
+const DE_JD: &str = "## Deine Aufgaben\n\
+Du entwickelst Backend-Dienste mit Kubernetes und Terraform.\n\n\
+## Das bieten wir\n\
+- Eigene Hardware deiner Wahl\n\
+- Jobrad\n\
+- Weiterbildungsbudget\n\n\
+## Dein Profil\n\
+Erfahrung mit Kafka.";
+
+#[test]
+fn benefits_section_is_excluded_but_requirements_survive() {
+    let blob = posting_text_blob("Backend Entwickler", Some(DE_JD), None).unwrap();
+    let kw = keywords_normalized(&blob);
+    for perk in ["hardware", "jobrad", "weiterbildungsbudget"] {
+        assert!(!kw.contains(perk), "perk leaked: {perk}");
+    }
+    for real in ["kubernetes", "terraform", "kafka"] {
+        assert!(kw.contains(real), "requirement lost: {real}");
+    }
+}
+
+#[test]
+fn benefits_heading_variants_and_zero_overlap() {
+    let en = "**What we offer**\nOwn laptop and gym\n**Requirements**\nRust";
+    let kw = keywords_normalized(&posting_text_blob("", Some(en), None).unwrap());
+    assert!(!kw.contains("laptop") && !kw.contains("gym") && kw.contains("rust"));
+    // A JD that is only a benefits section yields no blob at all.
+    assert!(posting_text_blob("", Some("Wir bieten:\nJobrad"), None).is_none());
+}

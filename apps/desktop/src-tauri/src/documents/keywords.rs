@@ -14,6 +14,7 @@ use std::collections::{HashMap, HashSet};
 
 use rust_stemmers::Stemmer;
 
+mod benefits;
 mod language;
 mod lexicon;
 mod posting;

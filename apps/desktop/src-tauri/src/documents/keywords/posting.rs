@@ -216,7 +216,7 @@ pub fn posting_text_blob(
         parts.push(title.to_string());
     }
     if let Some(d) = description {
-        let plain = markdown_to_plain(d);
+        let plain = markdown_to_plain(&super::benefits::strip_benefit_sections(d));
         if !plain.trim().is_empty() {
             parts.push(plain);
         }

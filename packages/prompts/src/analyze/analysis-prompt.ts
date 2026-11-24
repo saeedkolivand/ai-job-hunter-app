@@ -152,6 +152,7 @@ b) Required soft skills and competencies
 c) Required years of experience and seniority level
 d) Required education or certifications
 e) Key responsibilities that indicate what experience is most valued
+Never treat perks or benefits (e.g. own hardware, bike leasing, training budget, "What we offer" / "Wir bieten" sections) as requirements or keywords.
 
 STEP 3 — KEYWORD GAP ANALYSIS
 For each required keyword/skill from Step 2:
