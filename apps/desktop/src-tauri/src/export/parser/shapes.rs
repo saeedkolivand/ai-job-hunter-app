@@ -21,6 +21,40 @@ pub(super) static DATE_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})[\s\S]{0,30}(?:Present|Current|Now|Heute|Ongoing|Actuel|20\d{2}|19\d{2})\b").unwrap()
 });
 
+/// A numeric month written just before a year (`03/` in `03/2018`), which
+/// `DATE_RE` does not include because it starts matching at the year.
+static NUMERIC_MONTH_TAIL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b\d{1,2} ?[/.\-] ?$").unwrap());
+
+/// Split `line` at its first two-space gap into the raw title and the cleaned
+/// tail that may hold the date. The first gap is not always the date gap: a PDF
+/// that right-aligns the date column can lose that gap, giving `Role  ·  Company
+/// Dec 2022 – Nov 2025` (#1564). When the date does not open the tail, the split
+/// moves to where the date starts, so the company stays in the title and the
+/// date holds only the range.
+pub(super) fn split_gap_date(line: &str) -> Option<(&str, String)> {
+    let idx = line.find("  ")?;
+    let tail = super::strip_md(line[idx..].trim_start());
+    let moved = date_start(&tail)
+        .filter(|&s| s > 0)
+        .and_then(|s| line.rfind(&tail[s..]));
+    Some(match moved {
+        Some(pos) => (line[..pos].trim_end(), super::strip_md(&line[pos..])),
+        None => (&line[..idx], tail),
+    })
+}
+
+/// Byte offset where `text`'s date range begins, widened over a numeric month.
+fn date_start(text: &str) -> Option<usize> {
+    let m = DATE_RE.find(text)?;
+    let head = &text[..m.start()];
+    Some(
+        NUMERIC_MONTH_TAIL
+            .find(head)
+            .map_or(m.start(), |p| p.start()),
+    )
+}
+
 // A pipe/middot segment that IS a standalone single date — a bare year or
 // "Month YYYY" (e.g. "2021", "Jan 2021"). Anchored so it matches only when the
 // whole segment is a date. Lets single-year entries (common for PROJECTS and

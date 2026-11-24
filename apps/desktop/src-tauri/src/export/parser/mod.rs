@@ -27,7 +27,8 @@ use headings::{
     despace_letterspaced, is_nested_entry_heading, is_thematic_break, nested_entry_heading,
 };
 use shapes::{
-    is_contactish_segment, is_entry_title_shaped, separator_count, BULLET_RE, DATE_RE, SOLO_DATE_RE,
+    is_contactish_segment, is_entry_title_shaped, separator_count, split_gap_date, BULLET_RE,
+    DATE_RE, SOLO_DATE_RE,
 };
 
 /// The collapsed form of a letter-spaced heading, ONLY when that form is a
@@ -210,11 +211,7 @@ fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     // erased a bold job title before `raw` was ever captured. `raw` holds
     // just the title (mirrors the other two `JobEntry` forms below, whose
     // whole line IS the title); the date stays in `right_text`.
-    if let Some(idx) = trimmed.find("  ") {
-        let left_raw = &trimmed[..idx];
-        let right_raw = trimmed[idx..].trim_start();
-        let right_clean = strip_md(right_raw);
-
+    if let Some((left_raw, right_clean)) = split_gap_date(trimmed) {
         if DATE_RE.is_match(&right_clean) {
             let left_clean = strip_md(left_raw);
             let word_count = left_clean.split_whitespace().count();
