@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795528363789,
+  "lastUpdate": 1795542241549,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "1034ca546f21556c211fad54e7370d18a5cca7b0",
-          "message": "fix: extension answer tools capture script and reasoning-aware draft budget (#1103)\n\n* fix: keep the injected scripts' completion values out of the minifier\n\nFour injected scripts answer the background by completion value, and the\nper-entry build let the minifier fold capture.js's trailing object literal\ninto two bare calls, so \"Save my answers from this page\" failed on every\npage in every shipped build and the rewrite picker never filled. The pass\nis unminified now, its options are exported, and a test builds the real\nartifacts into a temp dir and asserts what each one evaluates to.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: answer drafts use the lowest reasoning effort, the full budget and one retry on an empty cut\n\nThe bridge's draft and rewrite compose ran with a 1000-token output budget\nand no reasoning effort, so a reasoning model's thinking exhausted the\nbudget before any answer text: \"make it 200 characters\" failed four of\nfour. The lowest effort the provider lists is sent when the model supports\none, the budget is the same cap the wire already enforces on visible text,\nand an empty length cut is retried once with the budget doubled, charging\nthe daily ceiling on both attempts through the same call.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* build: key the extension build cache on its config and pin the injected-entry partition\n\nturbo's build and test inputs now include *.config.*, so a vite.config.mts change can no longer serve a cached\ndist; the legacy esbuild key is dropped from the extension config, and the build-output test asserts which\nentries install globals versus which answer by completion value.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: retry the answer draft inside one registered round and send assist.done once\n\nThe retry re-registered the same reqId under a fresh generation, which leaked the first entry, let a cancel\nbetween the attempts start a billable job, and emitted assist.done after the failed first attempt. register is\nnow generation-scoped and rebinds the one entry, the done frame is sent once from the single exit, the retry is\nskipped when the client gave up, DRAFT_CAP bounds the visible text across both attempts, the budget is 2000\ntokens with the retry at DRAFT_CAP, and only a minimal or low effort tier is ever sent.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: return only the retry's own text from the answer draft and pin the anthropic thinking gate\n\nThe retry handed back the shared cross-attempt buffer, so text the failed first attempt had already forwarded\nwas prepended to the retry's answer; the driver now records the buffer length before each attempt and returns\nthe tail the successful attempt wrote, while the buffer still bounds both attempts under DRAFT_CAP. The\nAnthropic classic-thinking gate is a named predicate asserted against both compose budgets, with its boundary\npinned, and the retry-tail fixture is multi-byte so the byte-offset against char-clamp seam is exercised.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record the compose budget rule and the unminified injected pass\n\nThe extension README now says which build pass is unminified and why, and the extension-domain page gains a\ncompose-budget note pointing at the owning constants and predicate.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: give the answer-draft retry its own cap window and keep the provider modules under the line cap\n\nA retried draft was clamped against what the failed first attempt had already forwarded, so a long inline\nreasoning pass could leave the retry a stub returned as success; the cap accountant now rebases at each\nattempt while the buffer stays append-only, so the wire is bounded by two attempts of DRAFT_CAP with exactly\none retry. The budget assertion moves next to the Anthropic predicate it is sized against, the test-only\nre-export goes, the extension bridge stream's tests move to their own file, and three doc comments now say\nwhat the code does.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: the compose budget note says each attempt has its own cap window\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: point the compose-budget section at its owning symbols instead of restating them\n\nThe section restated answer.assist's budget sizing, effort selection,\nretry predicate and cap-window behavior as prose bullets alongside the\nsource pointers, which is exactly the drift risk rule 17 exists to\navoid — one of the restated claims (a cancelled request between\nattempts is never paid for) is already only approximately true, since\nthe charge check and the charge itself are not atomic. Replaced with a\npointer to compose_with_length_retry and ComposeStream, whose own doc\ncomments carry the contract.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01PEB84mXWcrYHtHX1xyMkhW\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
-          "timestamp": "2026-09-04T15:26:18+02:00",
-          "tree_id": "f44afc9a9e4a09f9bf5f83f5aaeaa9c4da4d42ec",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/1034ca546f21556c211fad54e7370d18a5cca7b0"
-        },
-        "date": 1788529869181,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2280344,
-            "range": "± 81111",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2722401,
-            "range": "± 58305",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 314275,
-            "range": "± 17508",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 437513,
             "range": "± 9857",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c2e62bf7e9c0a245d2709203522d47aaf3cf9a0b",
+          "message": "fix: structured fit notes, factory-reset failure reporting and queued scrape status (#1560)\n\n* fix: structured fit notes, factory-reset failure reporting and queued scrape status\n\n- fit notes carry mandatory gaps, to-verify items and a fit category instead of appended English prose (#1446)\n- notes are stamped with the resume and description they were built from; a changed stamp regenerates them, legacy notes are labelled stale\n- factory reset resets every store even when one fails and reports the failed stores to the UI (#1558)\n- autopilot runs and scrapes waiting for a scraper permit show as queued, and a stop while queued cancels immediately (#1559)\n\nCloses #1446\nCloses #1558\nCloses #1559\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix: address pr #1560 review and queue ai generation and scrape admission\n\n- fit: an unevaluable must-have goes to to-verify (unknown, not supported fit); blank resurfaced descriptions are filled before notes\n- fit: a fallback note is stale against the shown posting's description; agents get a notesStale flag\n- reset: credential clear reads its index fallibly; seven stores propagate clear errors; bridge reset reports persist failures\n- queue: ai_generate and scrape.board/scrape.url wait for a slot (queued) instead of being rejected; a job stopped while parked stays cancelled\n- scrape: a stopped scrape is no longer overwritten as failed\n\nRefs #1559\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T18:19:08+01:00",
+          "tree_id": "9350e8cbe4e18ad8cf43c1bd37c5cc379baf9604",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/c2e62bf7e9c0a245d2709203522d47aaf3cf9a0b"
+        },
+        "date": 1795542240177,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2111302,
+            "range": "± 21255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2484467,
+            "range": "± 52444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 521876,
+            "range": "± 25945",
             "unit": "ns/iter"
           }
         ]
