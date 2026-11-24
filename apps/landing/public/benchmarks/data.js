@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795517939277,
+  "lastUpdate": 1795521348153,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702",
-          "message": "feat: help chat, a11y lint over the design system, orphan copy cleanup and the mcp residuals (#1101)\n\n* feat: hybrid help search command with a text-hash vector cache\n\nhelp_search retrieves the best help entries for a question with the shipped\nretrieval stack (ephemeral FTS5 lexical arm, dense cosine arm, reciprocal-rank\nfusion). The renderer sends the active locale's entries per request, so no\ntranslation bundle is baked into the binary. The dense arm runs only under the\nsemantic-scoring opt-in and degrades honestly; one embedding-config snapshot\nfeeds both the daily-ceiling charge and the embed call; entry vectors are\ncached by text hash in a new help_vectors table that factory reset and an\nembedding-space change both clear. The policy row is Irreversible for the same\nreason the postings search's is. A lexical eval over the real corpus asserts\nten contested phrasings reach their entry in the top three.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: answer mcp pings and local tools while a bridge call is in flight\n\nThe serve loop becomes one reader, one dispatcher and one writer over a\nchannel: bridge-backed tool calls still run single-flight in input order\nthrough one worker, while ping, initialize, tools/list and every local tool are\nanswered immediately from the writer thread. EOF drains queued calls; a write\nerror still ends the server with exit 0. The irreversible confirm path gains a\npure core so match, mismatch and unavailable proof are tested, including that\na mismatch never dispatches.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: help chat on the support page over the shipped corpus\n\nAsk a question and get a grounded, streamed answer: the page's own entries are\nsent for retrieval, the top hits are rendered as trusted app copy, and the\nquestion, chat history and a capped glance of the user's data are fenced as\nuntrusted text with every fence tag neutralised. The keyword-only mode is\nsurfaced when semantic scoring is off. Also removes the thirteen orphaned\ndashboard translation leaves and adds the clear-location label the hoisted\nLocationInput control needs.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: keyboard-reachable ui primitives and the a11y lint over packages/ui\n\nThe advisory jsx-a11y job linted only the renderer. It now covers packages/ui\nwith two scoped, reasoned overrides, and the real defects it surfaced are\nfixed: a clear control nested inside another button, a clickable tag with no\nrole or key handling, an hrefless anchor, composite containers in the tab\norder, and mouse-only image panning.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: describe the dashboard the landing architecture map actually ships\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record adr-043 and resync adr-040/041/042 for the help chat and mcp changes\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* refactor: move the agent-cli policy types out of the table module\n\npolicy.rs sat one line under the R8 cap after the help_search row. The\ntypes and the classification rules move to policy/types.rs, re-exported so\nevery import path is unchanged; the POLICY table itself is byte-identical.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: pin sentry log and metric pipelines off without the deprecated options\n\nMain's sentry patch bump deprecated enable_logs and enable_metrics; the\nfirst only governs integrations this build never installs and the second is\na no-op. Both calls go, and the privacy property moves to three static legs:\nthe feature gate in the manifest, an empty integrations list, and an egress\nscan for any capture call site.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: rank help questions by term overlap and bound the dense arm and its cache\n\nThe help arm inherited the postings search's implicit AND, so a full-sentence\nquestion matched nothing on a default install; it now ORs its terms so BM25\nranks by overlap, and the eval carries chat-shaped sentences that fail under\nAND. The dense arm stops on the dense-arm deadline and reports unavailable\nwhen it could not pair every entry; cache-miss embeds are capped per request\nand help_vectors joins the prune sweep, so an agent-tier caller cannot grow\nthe table without bound. Both spend-charging policy rows now carry the\nweak-proof flag the table's doctrine asks for.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: bound the mcp call queue and the drain after eof\n\nThe reader/dispatcher split had replaced the pipe's backpressure with\nunbounded channels. The bridge-call queue is now bounded and a call that\narrives while it is full is refused with a server_busy sentinel; after EOF the\nloop drains under one absolute deadline and exits even if calls remain.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat states, prompt markers and primitive targets from review\n\nThe chat card's source chips ellipsize on a block label, the streamed answer\nno longer scroll-hijacks the page, one always-mounted live region announces\nthinking, errors and answers without re-reading the previous reply, muted text\nmeets the small-text contrast floor, a failed question keeps its text and\noffers retry, and the component now has a render test per state. The prompt\ndefuses forged section markers and sizes cloud models correctly; the recent\napplication list leaves the machine only for application questions and the\nglance is fetched inside send. Tag, MarkdownMessage, LocationInput and\nImagePreview take the reviewers' target-size, inline-flow and focus fixes.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: resync adr-040 and adr-043 for the review-round changes\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: bound the mcp reader queue and index the help vector sweep\n\nThe reader-to-writer event channel was still unbounded, so a client that\nstopped draining stdout could grow the process; it is now a bounded channel\nthe reader blocks on. The help_vectors migration gains the created_at index\nthe row-cap sweep is written for, the cache docs carry the concurrency\ncaveat, and the retrieval eval records its top-two rate against the smallest\nproduction limit.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat single-flight, lightbox focus restore and primitive nits\n\nStop no longer re-enables Ask while retrieval is still running, a new run\naborts the controller it replaces, and both are pinned by tests along with\nthe shared-query-key claim of the glance fetch. The image lightbox restores\nfocus to its opener on close, the markdown anchor carries noreferrer, and the\ncomposite containers that gained a programmatic tab stop do not paint a ring\non a mousedown in their gaps.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: name the three help-vector bounds and the concurrency caveat in adr-043\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: guard markdown link schemes in the shape static analysis recognises\n\nCodeQL flagged the anchor href as DOM text reinterpreted as HTML: the user's\nown editor text flows into a markdown link and a regex on a trimmed copy is\nnot a barrier its taint model tracks. The same allowlist is now a startsWith\ncheck on the exact string that reaches the attribute.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help dense-arm completeness after ranking and bounded mcp shutdown replies\n\nThe completeness check now compares the ranked count, so a degenerate vector\ncan no longer yield a partial ranking reported as hybrid; the per-request\nembed cap is asserted against the real corpus; the semantic-scoring gate has\na source guard; single-character CJK tokens survive the OR query. In the MCP\nloop a call the worker would start after EOF without budget to finish is\nanswered with a shutting_down sentinel instead of being abandoned, every\nearly exit sets the abandoned flag, and the drain-deadline test gains an\norder of magnitude of scheduling slack.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: markdown links safe on any click, help glance tolerant of one failed read\n\nThe scheme allowlist is a startsWith check on the string that reaches href,\nthe form static analysis recognises, and a middle-click is cancelled too.\nChat history keeps its newest turns when trimmed and indented forged markers\nare defused. Text typed while an answer streams survives; the glance reads\nsettle independently and an unavailable source is omitted rather than read\nas zero; the lightbox traps focus with the house hook and dialog shells keep\ntheir focus indicator; the API page's TSDoc is pointers only.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record the rewritten mcp loop's real-binary smoke in adr-040\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
-          "timestamp": "2026-09-03T01:27:51+02:00",
-          "tree_id": "2ade35a4059dc96a7cd540b300d115b37ba9218c",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/0c14e8f15a38f4ced0a5f3bf5a9f5c96cfcb3702"
-        },
-        "date": 1788393130588,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2377360,
-            "range": "± 19475",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2888603,
-            "range": "± 25843",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 259993,
-            "range": "± 4617",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 248703,
             "range": "± 3580",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da198059a8b400648e9c50700d606d6cb9f2d9f2",
+          "message": "fix: generation grounding (invented skills, cross-role bullets) and mcp export to file (#1556)\n\n* fix(generation): grade invented skill terms critical in every section\n\nAn unsupported tool-shaped term in Skills or Summary was a warning only, so it shipped. It now drives repair and needsReview like a role term (#1550).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* fix(generation): flag a bullet copied across roles as critical\n\nA near-duplicate bullet under two different experience or project entries is now duplicate.cross_role_bullet (Critical, repairable) (#1551).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* feat(mcp): write exported documents to a file instead of inline base64\n\nThe MCP server writes export bytes to an owner-only ajh-exports dir and answers path + bytes (#1553).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* style(generation): format stage test re-exports\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* fix: address review findings on cross-role duplicates and mcp export\n\nClassify a repeated bullet over all its earlier matches, so a summary copy cannot mask a role-to-role copy.\nDocument the inline export fallback, isolate the export tests, and trim TailorFlow under the TS size cap.\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T12:30:32+01:00",
+          "tree_id": "3c4f1d15bec675c1e734b81222b16f186ddd3fc4",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/da198059a8b400648e9c50700d606d6cb9f2d9f2"
+        },
+        "date": 1795521346563,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2311488,
+            "range": "± 26639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2767713,
+            "range": "± 37072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 559038,
+            "range": "± 7880",
             "unit": "ns/iter"
           }
         ]
