@@ -24,3 +24,23 @@ fn a_near_duplicate_inside_one_role_stays_a_warning() {
     assert_eq!(fired(&report, DUPLICATE_BULLET).len(), 1);
     silent(&report, DUPLICATE_CROSS_ROLE_BULLET);
 }
+
+/// Summary copy first, then role A, then role B: the Summary pairs must not mask the
+/// role-to-role copy (#1556 review).
+#[test]
+fn a_summary_copy_seen_first_does_not_mask_a_cross_role_copy() {
+    let globex = "- Took the fleet to AWS, with the whole deployment pipeline written as Terraform";
+    let summary = "container platforms behind them.";
+    let doc = EN_CLEAN
+        .replace(globex, &format!("{globex}\n{BULLET}"))
+        .replace(summary, &format!("{summary}\n{BULLET}"));
+    assert_eq!(doc.matches(BULLET).count(), 3, "fixture drifted");
+    let report = en_resume(&doc, &en_requirements());
+    assert_eq!(
+        fired(&report, DUPLICATE_CROSS_ROLE_BULLET).len(),
+        1,
+        "{:#?}",
+        report.issues
+    );
+    assert!(!report.ok);
+}

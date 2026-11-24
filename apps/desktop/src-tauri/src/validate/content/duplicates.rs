@@ -89,48 +89,52 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, f64) {
 
     let mut issues = Vec::new();
     let mut involved: HashSet<usize> = HashSet::new();
-    // Document order, first occurrence wins — one issue per pair, reported on
-    // the LATER bullet (the one to cut).
-    for i in 0..bullets.len() {
-        for j in (i + 1)..bullets.len() {
-            if tokens[i].len() < MIN_TOKENS_FOR_DUPLICATE
-                || tokens[j].len() < MIN_TOKENS_FOR_DUPLICATE
-            {
-                continue;
-            }
-            if jaccard(&tokens[i], &tokens[j]) < DUPLICATE_JACCARD_THRESHOLD {
-                continue;
-            }
-            involved.insert(i);
-            if involved.insert(j) {
-                let entry = |b: &ParsedLine| entry_of.get(&(b as *const _)).copied();
-                let cross = entry(bullets[i])
-                    .zip(entry(bullets[j]))
-                    .is_some_and(|(a, b)| a.0 != b.0);
-                let (code, lead) = if cross {
-                    (
-                        DUPLICATE_CROSS_ROLE_BULLET,
-                        "This bullet is copied from another role. A claim belongs to one role \
-                         only; cut it or replace it with something this role actually did",
-                    )
-                } else {
-                    (
-                        DUPLICATE_BULLET,
-                        "This bullet repeats an earlier one almost word for word. Cut it, or \
-                         replace it with a different result",
-                    )
-                };
-                // Only the cross-role Critical needs a section: it is what
-                // `repair` regenerates, so the run cannot park unresolvable.
-                let section = entry(bullets[j]).and_then(|e| e.1).filter(|_| cross);
-                issues.push(issue(
-                    code,
-                    section,
-                    format!("{lead}: \"{}\"", bullets[j].text),
-                    Some(bullets[j].text.clone()),
-                ));
-            }
+    // One issue per bullet that repeats ANY earlier one, reported on the LATER
+    // bullet (the one to cut). Cross-entry is decided over ALL its earlier
+    // matches, so a Summary copy seen first cannot mask a role-to-role copy.
+    let comparable = |k: usize| tokens[k].len() >= MIN_TOKENS_FOR_DUPLICATE;
+    let entry = |b: &ParsedLine| entry_of.get(&(b as *const _)).copied();
+    for j in 1..bullets.len() {
+        if !comparable(j) {
+            continue;
         }
+        let matches: Vec<usize> = (0..j)
+            .filter(|&i| {
+                comparable(i) && jaccard(&tokens[i], &tokens[j]) >= DUPLICATE_JACCARD_THRESHOLD
+            })
+            .collect();
+        if matches.is_empty() {
+            continue;
+        }
+        involved.extend(matches.iter().copied());
+        involved.insert(j);
+        let cross = matches.iter().any(|&i| {
+            entry(bullets[i])
+                .zip(entry(bullets[j]))
+                .is_some_and(|(a, b)| a.0 != b.0)
+        });
+        let (code, lead) = if cross {
+            (
+                DUPLICATE_CROSS_ROLE_BULLET,
+                "This bullet is copied from another role. A claim belongs to one role \
+                 only; cut it or replace it with something this role actually did",
+            )
+        } else {
+            (
+                DUPLICATE_BULLET,
+                "This bullet repeats an earlier one almost word for word. Cut it, or \
+                 replace it with a different result",
+            )
+        };
+        // Only the cross-role Critical needs a section: it is what
+        // `repair` regenerates, so the run cannot park unresolvable.
+        let section = entry(bullets[j]).and_then(|e| e.1).filter(|_| cross);
+        issues.push(issue(
+            code,
+            section,
+            format!("{lead}: \"{}\"", bullets[j].text),
+            Some(bullets[j].text.clone()),
+        ));
     }
 
     let ratio = involved.len() as f64 / bullets.len() as f64;

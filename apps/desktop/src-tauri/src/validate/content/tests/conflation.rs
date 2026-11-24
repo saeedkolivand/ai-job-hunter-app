@@ -258,5 +258,11 @@ fn a_weak_capitalised_term_in_the_summary_still_only_warns() {
     let ad = format!("{EN_JOB_AD}\nYou will also use Zorblax.\n");
     let report = report_for(&generated, EN_SOURCE, &ad, &[]);
     silent(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
+    assert_eq!(
+        fired(&report, FACTUAL_UNSUPPORTED_TERM).len(),
+        1,
+        "{:#?}",
+        report.issues
+    );
     assert!(report.ok, "{:#?}", report.issues);
 }

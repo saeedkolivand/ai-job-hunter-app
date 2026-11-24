@@ -10,24 +10,32 @@ fn export_payload(filename: &str) -> Value {
     })
 }
 
+/// A not-yet-created child of an isolated temp dir: `write_export` creates it owner-only, so
+/// the test never depends on `TempDir`'s own mode (umask) or on files outside `outer`.
+fn out_dir() -> (tempfile::TempDir, PathBuf) {
+    let outer = tempfile::TempDir::new().unwrap();
+    let dir = outer.path().join("out");
+    (outer, dir)
+}
+
 #[test]
 fn export_becomes_path_and_bytes_with_decoded_file() {
-    let dir = tempfile::TempDir::new().unwrap();
+    let (_outer, dir) = out_dir();
     let mut p = export_payload("cv.pdf");
-    write_export(dir.path(), &mut p);
+    write_export(dir.as_path(), &mut p);
     let d = &p["data"];
     assert!(d.get("data").is_none() && d.get("dataEncoding").is_none());
     assert_eq!(d["bytes"], 8);
     assert_eq!(d["filename"], "cv.pdf");
     assert_eq!(d["mimeType"], "application/pdf");
     let path = Path::new(d["path"].as_str().unwrap());
-    assert!(path.starts_with(dir.path()));
+    assert!(path.starts_with(dir.as_path()));
     assert_eq!(std::fs::read(path).unwrap(), b"%PDF-1.4");
 }
 
 #[test]
 fn traversal_filename_stays_inside_dir() {
-    let dir = tempfile::TempDir::new().unwrap();
+    let (outer, dir) = out_dir();
     for evil in [
         "../../evil.pdf",
         "..\\..\\evil.pdf",
@@ -36,36 +44,36 @@ fn traversal_filename_stays_inside_dir() {
         "",
     ] {
         let mut p = export_payload(evil);
-        write_export(dir.path(), &mut p);
+        write_export(dir.as_path(), &mut p);
         let path = PathBuf::from(p["data"]["path"].as_str().unwrap());
-        assert_eq!(path.parent().unwrap(), dir.path(), "{evil}");
+        assert_eq!(path.parent().unwrap(), dir.as_path(), "{evil}");
         assert!(path.exists());
     }
-    assert!(!dir.path().parent().unwrap().join("evil.pdf").exists());
+    assert!(!outer.path().join("evil.pdf").exists());
 }
 
 #[test]
 fn same_filename_twice_never_clobbers() {
-    let dir = tempfile::TempDir::new().unwrap();
+    let (_outer, dir) = out_dir();
     let (mut a, mut b) = (export_payload("cv.pdf"), export_payload("cv.pdf"));
-    write_export(dir.path(), &mut a);
-    write_export(dir.path(), &mut b);
+    write_export(dir.as_path(), &mut a);
+    write_export(dir.as_path(), &mut b);
     assert_ne!(a["data"]["path"], b["data"]["path"]);
 }
 
 #[test]
 fn non_export_and_bad_payloads_are_untouched() {
-    let dir = tempfile::TempDir::new().unwrap();
+    let (_outer, dir) = out_dir();
     for original in [
         json!({"dispatched": true, "data": {"data": [1, 2], "x": 1}}),
         json!({"dispatched": false, "error": "rate_limited"}),
         json!({"data": {"data": "!!notb64!!", "dataEncoding": "base64"}}),
     ] {
         let mut p = original.clone();
-        write_export(dir.path(), &mut p);
+        write_export(dir.as_path(), &mut p);
         assert_eq!(p, original);
     }
-    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+    assert!(!dir.exists(), "nothing may be written");
 }
 
 #[test]
