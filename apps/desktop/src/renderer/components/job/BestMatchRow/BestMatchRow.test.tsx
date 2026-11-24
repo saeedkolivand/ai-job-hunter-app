@@ -38,6 +38,7 @@ vi.mock('@ajh/ui', () => ({
 
 vi.mock('lucide-react', () => ({
   Bookmark: () => null,
+  ShieldCheck: () => null,
   ExternalLink: () => null,
   Sparkles: () => null,
   Wand2: () => null,
@@ -182,5 +183,44 @@ describe('BestMatchRow — plain-text rendering (ADR-010, untrusted content)', (
 
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument();
     expect(document.querySelector('img')).not.toBeInTheDocument();
+  });
+});
+
+describe('BestMatchRow — applied + availability labels (#1447, #1444)', () => {
+  const render1 = (overrides: Partial<AutopilotBestMatch>) =>
+    render(<BestMatchRow match={makeMatch(overrides)} mixedScoreSources={false} {...noop} />);
+
+  it('labels an exact application and a related-posting application differently', () => {
+    const { unmount } = render1({ applied: true, appliedExact: true });
+    expect(screen.getByText('bestMatches.row.appliedExact')).toBeInTheDocument();
+    unmount();
+
+    render1({ applied: true, appliedRelated: true });
+    expect(screen.getByText('bestMatches.row.appliedRelated')).toBeInTheDocument();
+    expect(screen.queryByText('bestMatches.row.appliedExact')).not.toBeInTheDocument();
+  });
+
+  it('marks a never-checked row as not checked and a verified-open row with its check time', () => {
+    const { unmount } = render1({});
+    expect(screen.getByText('bestMatches.row.availabilityUnchecked')).toBeInTheDocument();
+    unmount();
+
+    render1({ availability: 'open', availabilityCheckedAt: 1 });
+    expect(screen.getByText('bestMatches.row.availabilityOpen')).toBeInTheDocument();
+  });
+
+  it('only offers the availability check when the caller wires it', async () => {
+    const onCheck = vi.fn();
+    const match = makeMatch();
+    render(
+      <BestMatchRow
+        match={match}
+        mixedScoreSources={false}
+        {...noop}
+        onCheckAvailability={onCheck}
+      />
+    );
+    await userEvent.click(screen.getByTitle('bestMatches.row.checkAvailability'));
+    expect(onCheck).toHaveBeenCalledWith(match);
   });
 });

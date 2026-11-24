@@ -1,6 +1,7 @@
 //! Tests for the autopilot store, split by topic under the R8 LOC cap. [`support`] holds the
 //! fixtures the topic modules share (and that the other autopilot-family test modules reuse).
 
+mod availability;
 mod board_health;
 mod corrupt_file;
 mod crud;

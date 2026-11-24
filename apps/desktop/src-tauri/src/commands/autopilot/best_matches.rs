@@ -23,6 +23,7 @@ use serde::Serialize;
 
 use crate::autopilot::{Autopilot, AutopilotStatus, FoundJob, ScoreSource};
 use crate::ipc_contracts::match_tiers::{MATCH_TIER_COMBINED_HIGH, MATCH_TIER_COVERAGE_HIGH};
+use crate::scraping::availability::{Availability, AvailabilityEvidence};
 use crate::scraping::cluster::{assign_clusters, ClusterMemberRef};
 use crate::scraping::trust::TrustAssessment;
 
@@ -85,6 +86,18 @@ pub(super) struct BestMatchRow {
     /// Filled in by the command wrapper (`ApplicationStore`) — always `false`
     /// here, mirroring `FoundJob::applied`'s own "never hand-set" contract.
     pub(super) applied: bool,
+    /// This row's own url has an Application (#1447). Filled by [`mark_applied`].
+    pub(super) applied_exact: bool,
+    /// ANOTHER member of the cluster has an Application while this url does not (#1447).
+    pub(super) applied_related: bool,
+    /// Verified availability of the canonical member's url (#1444); `None` = never checked.
+    /// Closed/removed rows never reach this list, so a present value is `open` or `unknown`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) availability: Option<Availability>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) availability_checked_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) availability_source: Option<AvailabilityEvidence>,
     pub(super) is_agency: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) trust: Option<TrustAssessment>,
@@ -310,6 +323,13 @@ pub(super) fn compute_best_matches(
             .unwrap_or(idxs[0]);
         let canonical = jobs[canonical_idx];
 
+        // A posting verified closed/removed is not an actionable recommendation (#1444). Judged
+        // on the canonical member's own url — the one the user would open — so a repost under
+        // another url never inherits it. The row stays in storage; only this view drops it.
+        if canonical.availability.is_some_and(Availability::is_dead) {
+            continue;
+        }
+
         // The score above is the BEST-scored member's; `url` below is the
         // CANONICAL member's — two different selection rules over the same
         // cluster, not guaranteed to land on the same real posting (#1104).
@@ -388,6 +408,11 @@ pub(super) fn compute_best_matches(
             posted_at: canonical.posted_at,
             found_at,
             applied: false,
+            applied_exact: false,
+            applied_related: false,
+            availability: canonical.availability,
+            availability_checked_at: canonical.availability_checked_at,
+            availability_source: canonical.availability_source,
             is_agency: assignments[canonical_idx].is_agency,
             trust: canonical.trust.clone(),
             ghost_signals: canonical.ghost_signals.clone(),
@@ -450,11 +475,13 @@ pub(super) fn mark_applied(rows: &mut [BestMatchRow], applied: &HashSet<String>)
     if applied.is_empty() {
         return;
     }
+    let has_app = |url: &str| applied.contains(&crate::applications::normalize_job_url(url));
     for row in rows.iter_mut() {
-        row.applied = row
-            .cluster_members
-            .iter()
-            .any(|m| applied.contains(&crate::applications::normalize_job_url(&m.url)));
+        // Exact = the displayed posting itself; related = only a different cluster member (#1447).
+        row.applied_exact = has_app(&row.url);
+        row.applied_related =
+            !row.applied_exact && row.cluster_members.iter().any(|m| has_app(&m.url));
+        row.applied = row.applied_exact || row.applied_related;
     }
 }
 

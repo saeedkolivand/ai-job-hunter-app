@@ -1,29 +1,40 @@
-import { ArrowDownWideNarrow, Sparkles } from 'lucide-react';
+import { ArrowDownWideNarrow, RefreshCw, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 
 import { useTranslation } from '@ajh/translations';
-import { Dropdown, EmptyState, ErrorState, RowSkeleton } from '@ajh/ui';
+import { Button, ConfirmModal, Dropdown, EmptyState, ErrorState, RowSkeleton } from '@ajh/ui';
 
-import { BestMatchRow, DismissedBestMatchRow } from '@/components/job/BestMatchRow';
+import {
+  BestMatchRow,
+  DismissedBestMatchRow,
+  UnavailableBestMatchRow,
+} from '@/components/job/BestMatchRow';
 import { PageShell } from '@/components/layout/PageShell';
 import {
   BEST_MATCHES_SORTS,
   type BestMatchesSortBy,
   sortBestMatches,
 } from '@/features/best-matches/lib/sort-best-matches';
+import { useBestMatchAvailability } from '@/features/best-matches/lib/use-best-match-availability';
+import { useFrozenBestMatches } from '@/features/best-matches/lib/use-frozen-best-matches';
 import { useBestMatchActions } from '@/hooks/use-best-match-actions';
-import { useAutopilots, useBestMatches } from '@/services';
+import { useAutopilots } from '@/services';
 
 function BestMatchesPage() {
   const { t } = useTranslation();
   const [sortBy, setSortBy] = useState<BestMatchesSortBy>('score');
-  const { data, isLoading, isError, refetch } = useBestMatches();
+  const { data, isLoading, isError, isFetching, refresh } = useFrozenBestMatches();
   const { data: autopilots = [] } = useAutopilots();
   const { dismissedKeys, handleView, handleSave, handleApply, handleDismiss, undoDismiss } =
     useBestMatchActions();
+  const availability = useBestMatchAvailability(handleApply);
 
   const matches = data?.matches ?? [];
   const sorted = sortBestMatches(matches, sortBy);
+  // Counts come from the backend's uncapped `total`, so a reviewed page is never presented as a
+  // fully vetted pool (#1449). `reviewed` is what the user dismissed from THIS batch.
+  const total = data?.total ?? matches.length;
+  const reviewed = matches.filter((m) => dismissedKeys.has(m.key)).length;
   const mixedScoreSources = new Set(sorted.map((m) => m.scoreSource)).size > 1;
   const salariedCount = matches.filter(
     (m) => typeof m.salaryMin === 'number' || typeof m.salaryMax === 'number'
@@ -66,7 +77,7 @@ function BestMatchesPage() {
         <ErrorState
           title={t('bestMatches.errorTitle')}
           description={t('bestMatches.errorDescription')}
-          onRetry={() => void refetch()}
+          onRetry={() => void refresh()}
         />
       ) : matches.length === 0 ? (
         <EmptyState
@@ -82,11 +93,22 @@ function BestMatchesPage() {
         />
       ) : (
         <div className="space-y-3">
-          {data && data.total > data.matches.length && (
-            <p className="text-[11px] text-foreground/40">
-              {t('bestMatches.truncated', { shown: data.matches.length, total: data.total })}
-            </p>
-          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5 text-[11px] text-foreground/40">
+              {total > matches.length && (
+                <p>{t('bestMatches.truncated', { shown: matches.length, total })}</p>
+              )}
+              <p>{t('bestMatches.counts', { reviewed, left: Math.max(total - reviewed, 0) })}</p>
+            </div>
+            <Button
+              onClick={() => void refresh()}
+              disabled={isFetching}
+              className="flex h-auto shrink-0 items-center gap-1 rounded-lg border-transparent bg-muted px-2 py-1 text-[10px] font-medium text-foreground/60 hover:text-foreground/85"
+            >
+              <RefreshCw size={10} />
+              {t(total > matches.length ? 'bestMatches.nextBatch' : 'bestMatches.refresh')}
+            </Button>
+          </div>
           {sortBy === 'salary' && (
             <p className="text-[11px] text-foreground/40">
               {t('bestMatches.salaryCaption', { count: salariedCount, total: matches.length })}
@@ -99,19 +121,34 @@ function BestMatchesPage() {
                   key={match.key}
                   onUndo={() => undoDismiss(match.key, match.url)}
                 />
+              ) : availability.isUnavailable(match.key) ? (
+                <UnavailableBestMatchRow key={match.key} title={match.title} />
               ) : (
                 <BestMatchRow
                   key={match.key}
-                  match={match}
+                  match={availability.withVerdict(match)}
                   mixedScoreSources={mixedScoreSources}
                   onView={handleView}
                   onSave={handleSave}
-                  onApply={handleApply}
+                  onApply={availability.handlePrepare}
                   onDismiss={handleDismiss}
+                  onCheckAvailability={availability.handleCheck}
+                  checking={availability.checking.has(match.key)}
                 />
               )
             )}
           </div>
+          <ConfirmModal
+            open={availability.warning !== null}
+            onClose={availability.dismissWarning}
+            onConfirm={availability.confirmPrepareAnyway}
+            title={t('bestMatches.availability.closedTitle')}
+            description={t('bestMatches.availability.closedDescription', {
+              title: availability.warning?.title ?? '',
+            })}
+            confirmText={t('bestMatches.availability.prepareAnyway')}
+            variant="warning"
+          />
         </div>
       )}
     </PageShell>

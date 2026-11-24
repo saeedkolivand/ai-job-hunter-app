@@ -146,6 +146,33 @@ describe('useBestMatchActions — handleSave', () => {
   });
 });
 
+describe('useBestMatchActions — explicit side effects and stable identity (#1449)', () => {
+  it('Open advert only opens the url: no application is created and nothing navigates', () => {
+    const { result } = renderHook(() => useBestMatchActions());
+
+    act(() => result.current.handleView(makeMatch()));
+
+    expect(mockSaveFromPostingMutateAsync).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetApplicationApply).not.toHaveBeenCalled();
+  });
+
+  it('dismisses the key of the row that was clicked, whatever the list looks like afterwards', () => {
+    const { result } = renderHook(() => useBestMatchActions());
+    const clicked = makeMatch({ key: 'clicked', url: 'https://example.com/job/clicked' });
+    const neighbour = makeMatch({ key: 'neighbour', url: 'https://example.com/job/neighbour' });
+
+    // The row objects were captured at click time; a refetch/re-sort between the click and the
+    // mutation settling cannot redirect the decision, because nothing resolves by position.
+    act(() => result.current.handleDismiss(clicked));
+
+    expect([...result.current.dismissedKeys]).toEqual(['clicked']);
+    expect(result.current.dismissedKeys.has(neighbour.key)).toBe(false);
+    const [payload] = mockPersistJobMutate.mock.calls[0] as [{ job: { url: string } }];
+    expect(payload.job.url).toBe(clicked.url);
+  });
+});
+
 // ── CRITICAL correctness coupling ───────────────────────────────────────────
 //
 // Rust matches a dismissal by deriving canonical_job_key(record.url,

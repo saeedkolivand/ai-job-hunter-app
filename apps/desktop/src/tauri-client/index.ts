@@ -40,6 +40,7 @@ import { linkedin } from './namespaces/linkedin/index.js';
 import { match } from './namespaces/match/index.js';
 import { menu } from './namespaces/menu/index.js';
 import { notifications } from './namespaces/notifications/index.js';
+import { portablePrefs } from './namespaces/portablePrefs/index.js';
 import { privacy } from './namespaces/privacy/index.js';
 import { referrals } from './namespaces/referrals/index.js';
 import { resume } from './namespaces/resume/index.js';
@@ -62,6 +63,7 @@ export function createTauriInvokeClient(): AppClient {
     documents: documents as unknown as AppClient['documents'],
     jobPreferences: jobPreferences as AppClient['jobPreferences'],
     contactProfile: contactProfile as AppClient['contactProfile'],
+    portablePrefs: portablePrefs as AppClient['portablePrefs'],
     github: github as AppClient['github'],
     extensionBridge: extensionBridge as AppClient['extensionBridge'],
     emailWatch: emailWatch as AppClient['emailWatch'],

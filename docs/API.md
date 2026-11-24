@@ -39,7 +39,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`ai`](#ai)                           | 31      |                                                                                                                                        |
 | [`aiGenerations`](#aigenerations)     | 5       |                                                                                                                                        |
 | [`applications`](#applications)       | 10      | Application-tracking capability (ADR 0001).                                                                                            |
-| [`autopilot`](#autopilot)             | 13      | Job-discovery agent:                                                                                                                   |
+| [`autopilot`](#autopilot)             | 14      | Job-discovery agent:                                                                                                                   |
 | [`boards`](#boards)                   | 6       |                                                                                                                                        |
 | [`cliAgents`](#cliagents)             | 3       |                                                                                                                                        |
 | [`contactProfile`](#contactprofile)   | 3       | The candidate's stored contact fields (name, email, phone, location, LinkedIn, GitHub, website, custom links), localized per language. |
@@ -62,6 +62,7 @@ service hook, query key — see `AGENTS.md` rule 14.
 | [`match`](#match)                     | 3       |                                                                                                                                        |
 | [`menu`](#menu)                       | 3       |                                                                                                                                        |
 | [`notifications`](#notifications)     | 9       | Notification Center capability (Phase 2).                                                                                              |
+| [`portablePrefs`](#portableprefs)     | 3       |                                                                                                                                        |
 | [`privacy`](#privacy)                 | 5       |                                                                                                                                        |
 | [`referrals`](#referrals)             | 3       |                                                                                                                                        |
 | [`resume`](#resume)                   | 2       |                                                                                                                                        |
@@ -1288,6 +1289,7 @@ Contract: `AutopilotContract` in `packages/shared/src/ipc/contracts/autopilot.ts
 - [`autopilot.takePendingFocus`](#autopilottakependingfocus)
 - [`autopilot.bestMatches`](#autopilotbestmatches)
 - [`autopilot.dismissIdentityReview`](#autopilotdismissidentityreview)
+- [`autopilot.checkAvailability`](#autopilotcheckavailability)
 
 #### `autopilot.list`
 
@@ -1433,6 +1435,19 @@ drift (a different, unseen drift stays held). Dismissal never writes the
 other advert onto the row: it only stops the flag and re-enables Apply.
 Resolves `true` when a review was dismissed, `false` when none matched.
 
+#### `autopilot.checkAvailability`
+
+```ts
+checkAvailability(req: { url: string }): Promise<AutopilotAvailabilityCheck>;
+```
+
+Verify on demand whether the posting at `url` still accepts applications (#1444) and
+persist the verdict on every found job at that exact url (a repost under another url is a
+different row and is untouched). One guarded fetch through the shared scrape budget; no
+queue, no background crawl, nothing deleted. A login wall, captcha, 403/429, timeout or
+network failure resolves `unknown`, never `closed`. Rows verified `closed`/`removed` leave
+Best Matches.
+
 ### Channels — `autopilot`
 
 `AUTOPILOT_CHANNELS` in `packages/shared/src/ipc/contracts/autopilot.ts`:
@@ -1449,8 +1464,9 @@ Resolves `true` when a review was dismissed, `false` when none matched.
 | `resume`                | `autopilot:resume`                |
 | `bestMatches`           | `autopilot:bestMatches`           |
 | `dismissIdentityReview` | `autopilot:dismissIdentityReview` |
+| `checkAvailability`     | `autopilot:checkAvailability`     |
 
-`AUTOPILOT_CHANNELS` registers 10 of this namespace's 13 methods; the rest have no entry in it.
+`AUTOPILOT_CHANNELS` registers 11 of this namespace's 14 methods; the rest have no entry in it.
 
 ### Types — `autopilot`
 
@@ -1517,7 +1533,17 @@ export interface AutopilotBestMatch {
   postedAt?: number;
   /** EARLIEST discovery across every source that surfaced this job. */
   foundAt: number;
+  /** Any member of the cluster has an Application (`appliedExact || appliedRelated`). */
   applied?: boolean;
+  /** This row's own url has an Application (#1447). */
+  appliedExact?: boolean;
+  /** Only ANOTHER member of the cluster has an Application, not this url (#1447). */
+  appliedRelated?: boolean;
+  /** Verified availability of the row's url (#1444). Closed/removed rows are not listed, so a
+   *  present value is `open` or `unknown`; absent = never checked. */
+  availability?: AutopilotAvailability;
+  availabilityCheckedAt?: number;
+  availabilitySource?: AutopilotAvailabilitySource;
   isAgency?: boolean;
   trust?: JobTrustAssessment;
   /** The canonical member's advisory ghost-job signals; absent when unknown. */
@@ -1549,7 +1575,7 @@ export interface AutopilotBestMatchesResult {
 ### Referenced types — `autopilot`
 
 - `packages/shared/src/schemas/index.ts` — `AutopilotCreate`, `AutopilotUpdate`
-- `packages/shared/src/types/index.ts` — `Autopilot`, `AutopilotGhostSignals`, `AutopilotRunStatus`, `JobTrustAssessment`
+- `packages/shared/src/types/index.ts` — `Autopilot`, `AutopilotAvailability`, `AutopilotAvailabilityCheck`, `AutopilotAvailabilitySource`, `AutopilotGhostSignals`, `AutopilotRunStatus`, `JobTrustAssessment`
 
 ---
 
@@ -3808,6 +3834,75 @@ unsubscribe. See the Rust `notifications:toast` emit in `push_and_notify`.
 ### Referenced types — `notifications`
 
 - `packages/shared/src/types/index.ts` — `AppNotification`, `NotificationOpen`, `NotificationToast`
+
+---
+
+## `portablePrefs`
+
+Contract: `PortablePrefsContract` in `packages/shared/src/ipc/contracts/portablePrefs.ts`
+
+### Methods — `portablePrefs`
+
+- [`portablePrefs.get`](#portableprefsget)
+- [`portablePrefs.set`](#portableprefsset)
+- [`portablePrefs.migrate`](#portableprefsmigrate)
+
+#### `portablePrefs.get`
+
+```ts
+get(): Promise<PortablePrefsSnapshot>;
+```
+
+#### `portablePrefs.set`
+
+```ts
+set(values: Record<string, unknown>): Promise<{ success: true }>;
+```
+
+Record the user's changes. Rejects the whole call when a key is outside the
+allowlist or a value is null or too large; a value equal to the stored one
+is not a change.
+
+#### `portablePrefs.migrate`
+
+```ts
+migrate(values: Record<string, unknown>): Promise<PortablePrefsSnapshot>;
+```
+
+One-time import of the renderer's existing values. Fills only keys the
+backend does not hold (a value received by sync is never overwritten) and
+does nothing once it has run. Returns the resulting snapshot.
+
+### Channels — `portablePrefs`
+
+`PORTABLE_PREFS_CHANNELS` in `packages/shared/src/ipc/contracts/portablePrefs.ts`:
+
+| Key       | Channel                  |
+| --------- | ------------------------ |
+| `get`     | `portable_prefs_get`     |
+| `set`     | `portable_prefs_set`     |
+| `migrate` | `portable_prefs_migrate` |
+
+### Types — `portablePrefs`
+
+Declared in `packages/shared/src/ipc/contracts/portablePrefs.ts`.
+
+```ts
+/**
+ * The settings that follow the user to another device through the optional
+ * self-hosted sync (#1433). Backend-owned: the shell keeps an allowlist of keys
+ * (performance, local model limits, launch-at-login, close-to-tray, consent
+ * toggles and every secret are NOT on it) and merges two devices per key, last
+ * writer wins. Values are opaque JSON; the renderer validates them on read.
+ */
+
+/** Every stored key with its current value. */
+export interface PortablePrefsSnapshot {
+  values: Record<string, unknown>;
+  /** The one-time copy from the renderer's own storage already ran. */
+  migrated: boolean;
+}
+```
 
 ---
 

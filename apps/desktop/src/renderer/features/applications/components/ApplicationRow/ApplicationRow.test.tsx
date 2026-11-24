@@ -229,10 +229,11 @@ describe('ApplicationRow — row meta', () => {
     expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
   });
 
-  it('does not keep the "applied" stamp after a demotion back to saved', () => {
-    renderRow({ status: 'saved', appliedAt: RECENT_UPDATED_AT });
+  // A demoted or withdrawn pursuit's legacy appliedAt is never a receipt (#1447).
+  it.each(['saved', 'withdrawn'] as const)('does not keep the "applied" stamp for %s', (status) => {
+    renderRow({ status, appliedAt: RECENT_UPDATED_AT });
     expect(screen.queryByText('applications.row.appliedAgo')).not.toBeInTheDocument();
-    expect(screen.getByText('applications.row.updatedAgo')).toBeInTheDocument();
+    expect(screen.getByText(/applications\.row\.(updated|withdrawn)Ago/)).toBeInTheDocument();
   });
 
   it('shows the per-stage Tag only when showStageTag is set', () => {

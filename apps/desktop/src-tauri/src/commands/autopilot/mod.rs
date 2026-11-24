@@ -277,6 +277,12 @@ pub fn autopilot_dismiss_identity_review(
         .dismiss_identity_review(&autopilot_id, &normalized)
 }
 
+/// Verify one posting's availability on demand (#1444) — see [`availability::check_availability`].
+#[tauri::command]
+pub async fn autopilot_check_availability(app: AppHandle, url: String) -> AppResult<Value> {
+    availability::check_availability(app, url).await
+}
+
 /// Cross-autopilot top-match surface (see `best_matches`'s module doc for the
 /// recompute-vs-persist rationale). Thin I/O wrapper: every decision lives in
 /// the pure, unit-tested `compute_best_matches`; this only resolves the
@@ -373,6 +379,7 @@ mod rerank;
 // Same LOC-cap reasoning as `rerank` above (see that module's doc for the
 // pattern); see `best_matches`'s own module doc for why membership is
 // recomputed here rather than persisted.
+mod availability;
 mod best_matches;
 use best_matches::*;
 

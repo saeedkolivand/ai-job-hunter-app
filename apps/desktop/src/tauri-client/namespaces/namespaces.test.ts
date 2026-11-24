@@ -95,6 +95,11 @@ describe('tauri-client namespaces', () => {
       url: 'https://example.com/1',
     });
 
+    autopilot.checkAvailability({ url: 'https://example.com/1' });
+    expect(invoke).toHaveBeenCalledWith('autopilot_check_availability', {
+      url: 'https://example.com/1',
+    });
+
     // The whole request travels under a single `req` key (the shape
     // `#[tauri::command] help_search(req: HelpSearchRequest)` deserializes),
     // exactly like `scrape_hybrid_search` above — a flattened payload would

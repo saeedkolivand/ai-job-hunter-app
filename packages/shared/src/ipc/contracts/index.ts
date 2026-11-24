@@ -29,6 +29,7 @@ import { DEDUP_CHANNELS, type DedupContract } from './dedup.js';
 import { DIALOG_CHANNELS, type DialogContract } from './dialog.js';
 import { DISCOVERY_CHANNELS, type DiscoveryContract } from './discovery.js';
 import { DOCUMENTS_CHANNELS, type DocumentsContract } from './documents.js';
+import { PORTABLE_PREFS_CHANNELS, type PortablePrefsContract } from './portablePrefs.js';
 export * from './export.js';
 import { EMAIL_WATCH_CHANNELS, type EmailWatchContract } from './emailWatch.js';
 import { EXPORT_CHANNELS, type ExportContract } from './export.js';
@@ -65,6 +66,7 @@ export interface IpcContract {
   export: ExportContract;
   jobPreferences: JobPreferencesContract;
   contactProfile: ContactProfileContract;
+  portablePrefs: PortablePrefsContract;
   github: GitHubContract;
   extensionBridge: ExtensionBridgeContract;
   emailWatch: EmailWatchContract;
@@ -105,6 +107,7 @@ export const IPC_CHANNELS = {
   export: EXPORT_CHANNELS,
   jobPreferences: JOB_PREFERENCES_CHANNELS,
   contactProfile: CONTACT_PROFILE_CHANNELS,
+  portablePrefs: PORTABLE_PREFS_CHANNELS,
   github: GITHUB_CHANNELS,
   extensionBridge: EXTENSION_BRIDGE_CHANNELS,
   emailWatch: EMAIL_WATCH_CHANNELS,
@@ -273,6 +276,7 @@ export {
   type PendingMenuIntent,
 } from './menu.js';
 export { NOTIFICATIONS_CHANNELS, type NotificationsContract } from './notifications.js';
+export * from './portablePrefs.js';
 export {
   type CrashReportingSettings,
   PRIVACY_CHANNELS,

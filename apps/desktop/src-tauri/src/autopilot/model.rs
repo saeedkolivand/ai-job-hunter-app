@@ -5,6 +5,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::identity::IdentityReview;
+use crate::scraping::availability::{Availability, AvailabilityEvidence};
 use crate::scraping::cluster::ClusterMemberRef;
 
 // ── Back-compat deserializer: `board` (string) OR `boards` (array) → Vec<String> ──
@@ -345,6 +346,17 @@ pub struct FoundJob {
     /// as `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ghost_signals: Option<crate::posting_history::GhostSignals>,
+    /// Last verified availability of THIS posting's url (#1444), separate from the match score.
+    /// Set only by the on-demand check; `None` = never checked (reads as unknown). Keyed by the
+    /// posting's own url, so a repost under a new requisition id does not inherit it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability: Option<Availability>,
+    /// Epoch ms of the check behind [`Self::availability`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability_checked_at: Option<u64>,
+    /// Sanitized evidence category behind [`Self::availability`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub availability_source: Option<AvailabilityEvidence>,
 }
 
 /// Serde default for [`FoundJob::cluster_canonical`] — a job with no cluster

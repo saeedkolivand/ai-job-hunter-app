@@ -1028,7 +1028,7 @@
         "disabling": "Turning off…",
         "disableFailed": "Couldn't turn off sync.",
         "disclosure": "Sync sends everything in an app backup — applications and their history, résumés and other documents, AI generations, your contact profile, job preferences (including your salary expectation), AI provider settings, referrals, autopilots and usage records — to the server you enter here, and to no one else. Passwords, API keys and the sync token never sync; the token stays in your OS keychain. Whoever runs that server can read what it stores, so use your own server or one you trust.",
-        "scopeNote": "Display nicknames, appearance, language, output tone, reasoning effort, applicant availability and notice periods are not included. When enabled, sync runs while the app is open: after startup, every 15 minutes, or when you choose Sync now.",
+        "scopeNote": "Your portable settings sync too: display name, language, output tone, résumé options, applicant start, notice and remote facts, prompt quality, reasoning effort, recent locations and appearance. Performance, local model settings, launch-at-login, close-to-tray and the consent toggles (logo lookup, indexing, extension access, email watching) stay on each device. When enabled, sync runs while the app is open: after startup, every 15 minutes, or when you choose Sync now.",
         "loading": "Checking sync status…",
         "loadFailed": "Couldn't read the sync status.",
         "retry": "Retry"
@@ -2283,7 +2283,7 @@
         "title": "How should we filter results?",
         "subtitle": "Only jobs passing these filters will be acted on.",
         "matchScore": "Match score",
-        "matchScoreHint": "How strict the resume match must be",
+        "matchScoreHint": "How strict the keyword coverage must be (not a prediction of interview fit)",
         "matchLevel": {
           "any": "Any",
           "anyDesc": "No minimum",
@@ -2461,11 +2461,27 @@
       "salary": "Salary"
     },
     "truncated": "Showing {{shown}} of {{total}} qualifying matches",
+    "counts": "{{reviewed}} dismissed this visit · {{left}} qualifying matches not reviewed yet",
+    "nextBatch": "Load next batch",
+    "refresh": "Refresh list",
+    "availability": {
+      "unverified": "Couldn't verify whether this posting is still open.",
+      "closedTitle": "This posting looks closed",
+      "closedDescription": "\"{{title}}\" no longer appears to accept applications. Prepare an application anyway?",
+      "prepareAnyway": "Prepare anyway"
+    },
     "salaryCaption": "{{count}} of {{total}} rows report a salary — most boards don't",
     "row": {
-      "view": "View",
+      "view": "Open advert",
       "save": "Save",
-      "apply": "Apply",
+      "apply": "Prepare application",
+      "checkAvailability": "Check availability",
+      "appliedExact": "Applied",
+      "appliedRelated": "Applied to a related posting",
+      "availabilityOpen": "Open · checked {{time}}",
+      "availabilityUnknown": "Unverified · checked {{time}}",
+      "availabilityUnchecked": "Not checked",
+      "unavailable": "\"{{title}}\" is closed or removed and is hidden from your matches.",
       "dismiss": "Dismiss",
       "dismissed": "Dismissed",
       "undo": "Undo",
@@ -3085,7 +3101,7 @@
         },
         "bestMatches": {
           "q": "What is the Best Matches page?",
-          "a": "\"Best Matches\" sits in the sidebar under \"Automation\". It pools the found jobs from every autopilot into one list, folds duplicate postings of the same role together, and keeps only the rows that clear the \"High\" band, so weak finds never reach it. Sort by \"Score\", \"Newest\" or \"Salary\". Each row offers \"View\", \"Save\" and \"Apply\"; \"Dismiss\" drops a row you are not interested in, and \"Undo\" brings it back."
+          "a": "\"Best Matches\" sits in the sidebar under \"Automation\". It pools the found jobs from every autopilot into one list, folds duplicate postings of the same role together, and keeps only the rows that clear the \"High\" band, so weak finds never reach it. Sort by \"Score\", \"Newest\" or \"Salary\". Each row offers \"Open advert\" (only opens the posting), \"Save\" and \"Prepare application\" (creates a draft, nothing is submitted); \"Dismiss\" drops a row you are not interested in, and \"Undo\" brings it back."
         }
       },
       "documents": "Documents",
@@ -3592,6 +3608,7 @@
       "deleteAll": "Delete everything",
       "appliedAgo": "Applied {{when}}",
       "updatedAgo": "Updated {{when}}",
+      "withdrawnAgo": "Withdrawn {{when}}",
       "statusError": "Could not update the stage.",
       "addNoteHint": "Add a note?"
     },

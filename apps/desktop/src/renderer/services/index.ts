@@ -40,6 +40,7 @@ export * from './use-jobs';
 export * from './use-match';
 export * from './use-menu';
 export * from './use-notifications';
+export * from './use-portable-prefs';
 export * from './use-postings';
 export * from './use-privacy';
 export * from './use-profile-import';

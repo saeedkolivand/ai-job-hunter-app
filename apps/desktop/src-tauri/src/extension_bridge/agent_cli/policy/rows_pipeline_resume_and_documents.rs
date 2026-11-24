@@ -188,6 +188,25 @@ pub(super) const PIPELINE_RESUME_AND_DOCUMENTS: &[PolicyEntry] = &[
         path: "commands::contact_profile::contact_profile_header_line",
         effect: Effect::Read,
     },
+    // commands/portable_prefs.rs (#1433): the renderer's own settings plumbing.
+    PolicyEntry {
+        path: "commands::portable_prefs::portable_prefs_get",
+        effect: Effect::NotExposed(
+            "renderer settings plumbing for sync; no agent task reads raw preference blobs",
+        ),
+    },
+    PolicyEntry {
+        path: "commands::portable_prefs::portable_prefs_set",
+        effect: Effect::NotExposed(
+            "changes the user's synced app settings; only the user edits them in Settings",
+        ),
+    },
+    PolicyEntry {
+        path: "commands::portable_prefs::portable_prefs_migrate",
+        effect: Effect::NotExposed(
+            "one-time renderer-storage migration, run by the app itself at startup",
+        ),
+    },
     // commands/scrape.rs
     // Writes scraped postings into the shared cache — additive/recomputable.
     PolicyEntry {

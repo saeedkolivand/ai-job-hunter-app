@@ -96,6 +96,10 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         commands::contact_profile::contact_profile_get,
         commands::contact_profile::contact_profile_set,
         commands::contact_profile::contact_profile_header_line,
+        // portable preferences: synced settings allowlist
+        commands::portable_prefs::portable_prefs_get,
+        commands::portable_prefs::portable_prefs_set,
+        commands::portable_prefs::portable_prefs_migrate,
         // scrape
         commands::scrape::scrape_boards,
         commands::scrape::scrape_url,
@@ -160,6 +164,7 @@ pub(crate) fn invoke_handler() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + S
         commands::autopilot::autopilot_take_pending_focus,
         commands::autopilot::autopilot_best_matches,
         commands::autopilot::autopilot_dismiss_identity_review,
+        commands::autopilot::autopilot_check_availability,
         // ai generations
         commands::ai_generations::ai_generations_list,
         commands::ai_generations::ai_generations_save,

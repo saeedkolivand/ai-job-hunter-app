@@ -79,11 +79,16 @@ export function ApplicationRow({
   // `appliedAt` is a one-way audit stamp (a demotion back to `saved` keeps it),
   // so only a stage past apply may show it.
   const preApply = stage?.preApply ?? false;
-  const appliedAt = preApply ? null : application.appliedAt;
+  // A withdrawn pursuit never claims a submission (#1447): its `appliedAt` may be a legacy
+  // workflow timestamp from an accidental manual track, not a receipt, so it reads as withdrawn.
+  const withdrawn = application.status === 'withdrawn';
+  const appliedAt = preApply || withdrawn ? null : application.appliedAt;
   const stampAt = appliedAt ?? application.updatedAt;
   const stampLabel = appliedAt
     ? t('applications.row.appliedAgo', { when: formatRelative(appliedAt) })
-    : t('applications.row.updatedAgo', { when: formatRelative(application.updatedAt) });
+    : t(withdrawn ? 'applications.row.withdrawnAgo' : 'applications.row.updatedAgo', {
+        when: formatRelative(application.updatedAt),
+      });
 
   const board = application.board.trim();
   const salary = formatSalaryRange(

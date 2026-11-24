@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 
 import {
+  type AutopilotAvailabilityCheck,
   type AutopilotBestMatchesResult,
   type AutopilotFocusEvent,
   type AutopilotStepEvent,
@@ -33,4 +34,6 @@ export const autopilot = {
   bestMatches: () => invoke<AutopilotBestMatchesResult>('autopilot_best_matches'),
   dismissIdentityReview: ({ autopilotId, url }: { autopilotId: string; url: string }) =>
     invoke<boolean>('autopilot_dismiss_identity_review', { autopilotId, url }),
+  checkAvailability: ({ url }: { url: string }) =>
+    invoke<AutopilotAvailabilityCheck>('autopilot_check_availability', { url }),
 };
