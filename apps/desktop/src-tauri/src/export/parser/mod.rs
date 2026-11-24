@@ -30,19 +30,26 @@ use shapes::{
     is_contactish_segment, is_entry_title_shaped, separator_count, BULLET_RE, DATE_RE, SOLO_DATE_RE,
 };
 
+/// The collapsed form of a letter-spaced heading, ONLY when that form is a
+/// heading we know. Gating on the result means an ordinary line can never be
+/// rewritten by accident, and every downstream consumer (`SectionId::from_header`,
+/// `documents::evidence`, the renderer) sees the same readable text. A compound
+/// heading ("SELECTED OPEN-SOURCE PROJECTS", #1561) is not in the exact-name list
+/// but still classifies by its stem.
+pub(crate) fn collapse_letterspaced_heading(clean: &str) -> Option<String> {
+    use crate::model::document::SectionId;
+    despace_letterspaced(clean).filter(|despaced| {
+        is_known_section_name(despaced)
+            || !matches!(SectionId::from_header(despaced), SectionId::Custom(_))
+    })
+}
+
 /// Parse a single line
 fn parse_line(raw: &str, idx: usize, all_lines: &[&str]) -> ParsedLine {
     let trimmed = raw.trim();
     let mut clean = strip_md(trimmed);
-    // A letter-spaced heading is rewritten to its collapsed form ONLY when that
-    // form is a heading we know. Gating on the result means an ordinary line can
-    // never be rewritten by accident, and every downstream consumer
-    // (`SectionId::from_header`, `documents::evidence`, the renderer) sees the
-    // same readable text.
-    if let Some(despaced) = despace_letterspaced(&clean) {
-        if is_known_section_name(&despaced) {
-            clean = despaced;
-        }
+    if let Some(despaced) = collapse_letterspaced_heading(&clean) {
+        clean = despaced;
     }
     let clean = clean;
     let segments = parse_inline_md(trimmed);

@@ -16,13 +16,16 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
+use crate::export::parser::is_known_section_name;
 use crate::extraction::types::{Confidence, ExtractedResume};
 use crate::model::adapter::model_from_resume_text;
 use crate::model::document::{DocumentModel, HeaderBlock, SectionId};
 use crate::model::rich::tokenize_rich;
 
+/// One optional space either side of `@`: some PDF text layers kern the address
+/// apart (`name0 @gmail.com`, #1561). The value is stored with the space removed.
 static EMAIL_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap());
+    LazyLock::new(|| Regex::new(r"[A-Za-z0-9._%+\-]+ ?@ ?[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").unwrap());
 
 /// Phone numbers: at least 7 digits, optional `+`, spaces, dashes, parens.
 static PHONE_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\+?\d[\d\s().\-]{6,}\d").unwrap());
@@ -93,10 +96,11 @@ pub fn structure(extracted: &ExtractedResume) -> StructuredResume {
     let text = &extracted.text;
 
     let name = extract_name(text);
-    let email = find_span(text, &EMAIL_RE).map(|(v, s)| Field::new(v, Confidence::High, Some(s)));
+    let email = find_span(text, &EMAIL_RE)
+        .map(|(v, s)| Field::new(v.replace(' ', ""), Confidence::High, Some(s)));
     let phone = find_span(text, &PHONE_RE)
         .filter(|(v, _)| v.chars().filter(|c| c.is_ascii_digit()).count() >= 7)
-        .map(|(v, s)| Field::new(v.trim().to_string(), Confidence::Medium, Some(s)));
+        .map(|(v, s)| Field::new(despace_digits(v.trim()), Confidence::Medium, Some(s)));
     let location = extract_location(text);
 
     // Links come from real hyperlinks (high confidence); fall back to bare URLs.
@@ -217,10 +221,26 @@ fn extract_name(text: &str) -> Field<String> {
 }
 
 /// Best-effort location: a short, comma-bearing line near the top that isn't the
-/// contact/email line. Low confidence by nature.
+/// contact/email segment. Each `·` / `|` / `•` segment is tried on its own, so
+/// a `City, Country · email · phone` contact line still yields the city (#1561).
+/// Low confidence by nature.
 fn extract_location(text: &str) -> Option<Field<String>> {
-    for line in text.lines().take(6) {
-        let l = line.trim();
+    // The header ends at the first section heading, recognised exactly as the
+    // parser does (letter-spaced ones included), so a skills or projects line such
+    // as `Rust, TypeScript | Python, SQL` is never a city.
+    let is_heading = |line: &str| {
+        let clean = crate::export::parser::strip_md(line.trim());
+        is_known_section_name(&clean)
+            || crate::export::parser::collapse_letterspaced_heading(&clean).is_some()
+    };
+    let segments = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take_while(|line| !is_heading(line))
+        .take(6)
+        .flat_map(|line| line.split(['·', '|', '•']));
+    for segment in segments {
+        let l = segment.trim();
         if l.len() < 3 || l.len() > 60 || !l.contains(',') {
             continue;
         }
@@ -280,6 +300,19 @@ fn section_kind(id: &SectionId) -> String {
 }
 
 // ── span helpers ──────────────────────────────────────────────────────────────
+
+/// A PDF text layer that kerns every digit apart (`+3 1 6 3 4 7 8`) is rejoined;
+/// a normally grouped number (`+31 6 3478 0936`) has a longer group and is kept.
+fn despace_digits(phone: &str) -> String {
+    if phone
+        .split_whitespace()
+        .all(|group| group.chars().count() <= 2)
+    {
+        phone.split_whitespace().collect()
+    } else {
+        phone.to_string()
+    }
+}
 
 fn find_span(text: &str, re: &Regex) -> Option<(String, Span)> {
     re.find(text).map(|m| {
