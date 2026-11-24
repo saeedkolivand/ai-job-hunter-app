@@ -64,6 +64,48 @@ describe('useBestMatchAvailability', () => {
     expect(result.current.isUnavailable('b')).toBe(false);
   });
 
+  it('lets the latest Prepare own the warning when checks resolve out of order', async () => {
+    let resolveA!: (v: AutopilotAvailabilityCheck) => void;
+    mockCheck
+      .mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+      .mockResolvedValueOnce(verdict('closed'));
+    const { result } = renderHook(() => useBestMatchAvailability(prepare));
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.handlePrepare(match('a'));
+    });
+    await act(() => result.current.handlePrepare(match('b')));
+    expect(result.current.warning?.key).toBe('b');
+
+    await act(async () => {
+      resolveA(verdict('closed'));
+      await first;
+    });
+    expect(result.current.warning?.key).toBe('b');
+    act(() => result.current.confirmPrepareAnyway());
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls[0]?.[0].key).toBe('b');
+  });
+
+  it('drops a stale open verdict instead of preparing over a newer Prepare', async () => {
+    let resolveA!: (v: AutopilotAvailabilityCheck) => void;
+    mockCheck
+      .mockImplementationOnce(() => new Promise((r) => (resolveA = r)))
+      .mockResolvedValueOnce(verdict('open'));
+    const { result } = renderHook(() => useBestMatchAvailability(prepare));
+    let first!: Promise<void>;
+    act(() => {
+      first = result.current.handlePrepare(match('a'));
+    });
+    await act(() => result.current.handlePrepare(match('b')));
+    await act(async () => {
+      resolveA(verdict('open'));
+      await first;
+    });
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(prepare.mock.calls[0]?.[0].key).toBe('b');
+  });
+
   it('applies a verdict to the row it was checked for, by key', async () => {
     mockCheck.mockResolvedValue(verdict('open'));
     const { result } = renderHook(() => useBestMatchAvailability(prepare));

@@ -93,21 +93,67 @@ fn segments(text: &str) -> Vec<String> {
     out
 }
 
-/// Every `(language, level)` the text asserts. A segment with a level and several languages
-/// ("fluent English and Italian" split apart aside) applies the level to each of them.
+/// Split at sentence ends (`.`/`!`/`?` followed by whitespace or the end) so a level never bleeds
+/// from one sentence into the next ("Italian B1. English C2.").
+fn sentences(text: &str) -> Vec<&str> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut chars = text.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if matches!(c, '.' | '!' | '?') && chars.peek().is_none_or(|(_, n)| n.is_whitespace()) {
+            out.push(&text[start..i]);
+            start = i + c.len_utf8();
+        }
+    }
+    out.push(&text[start..]);
+    out
+}
+
+const NEGATORS: &[&str] = &[
+    "not", "no", "non", "nicht", "kein", "keine", "never", "without",
+];
+
+/// A level word right after a negator ("not fluent", "nicht fließend") asserts nothing.
+fn negated(ws: &[String], i: usize) -> bool {
+    (i.saturating_sub(2)..i).any(|p| NEGATORS.contains(&ws[p].as_str()))
+}
+
+/// Every `(language, level)` the text asserts. A segment with a level applies it to each language
+/// in it; a level that PRECEDES its language ("fluent in English and Italian") is shared with the
+/// following level-less segments of the same sentence, a trailing one ("English C2") is not.
 pub(crate) fn language_levels(text: &str) -> Vec<(&'static str, Level)> {
     let mut found = Vec::new();
-    for seg in segments(text) {
-        let ws = words(&seg);
-        let level = ws
-            .iter()
-            .enumerate()
-            .filter_map(|(i, w)| word_level(w, i.checked_sub(1).map(|p| ws[p].as_str())))
-            .max();
-        let Some(level) = level else { continue };
-        for (name, aliases) in LANGUAGES {
-            if ws.iter().any(|w| aliases.contains(&w.as_str())) {
-                found.push((*name, level));
+    for sentence in sentences(text) {
+        let mut carry: Option<Level> = None;
+        for seg in segments(sentence) {
+            let ws = words(&seg);
+            let levels: Vec<(usize, Level)> = (0..ws.len())
+                .filter(|&i| !negated(&ws, i))
+                .filter_map(|i| {
+                    let prev = i.checked_sub(1).map(|p| ws[p].as_str());
+                    word_level(&ws[i], prev).map(|l| (i, l))
+                })
+                .collect();
+            let langs: Vec<(&'static str, usize)> = LANGUAGES
+                .iter()
+                .filter_map(|(name, aliases)| {
+                    let at = ws.iter().position(|w| aliases.contains(&w.as_str()))?;
+                    Some((*name, at))
+                })
+                .collect();
+            let own = levels.iter().map(|(_, l)| *l).max();
+            let level = own.or(carry);
+            if let Some(own) = own {
+                let first_level = levels.iter().map(|(i, _)| *i).min();
+                let first_lang = langs.iter().map(|(_, at)| *at).min();
+                carry = first_level
+                    .zip(first_lang)
+                    .and_then(|(lv, lg)| (lv < lg).then_some(own));
+            } else if langs.is_empty() {
+                carry = None;
+            }
+            if let Some(level) = level {
+                found.extend(langs.iter().map(|(name, _)| (*name, level)));
             }
         }
     }

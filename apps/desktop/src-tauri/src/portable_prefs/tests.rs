@@ -81,7 +81,7 @@ fn a_received_payload_drops_unknown_and_malformed_keys() {
 }
 
 #[test]
-fn a_newer_remote_key_wins_an_older_one_loses_and_a_tie_keeps_local() {
+fn a_newer_remote_key_wins_and_an_older_one_loses() {
     let (_d, s) = store();
     s.set(
         &map(json!({ "language": "de", "outputTone": "casual" })),
@@ -90,13 +90,10 @@ fn a_newer_remote_key_wins_an_older_one_loses_and_a_tie_keeps_local() {
     .unwrap();
     s.upsert_record(SECTION, &remote("language", json!("fr"), 50))
         .unwrap();
-    s.upsert_record(SECTION, &remote("outputTone", json!("formal"), 100))
-        .unwrap();
     s.upsert_record(SECTION, &remote("theme", json!({ "scheme": "dark" }), 1))
         .unwrap();
     let (values, _) = s.values().unwrap();
     assert_eq!(values["language"], "de", "older remote loses");
-    assert_eq!(values["outputTone"], "casual", "a tie keeps local");
     assert_eq!(
         values["theme"],
         json!({ "scheme": "dark" }),
@@ -216,4 +213,61 @@ fn clear_forgets_values_and_keeps_the_migration_done() {
     s.clear().unwrap();
     let (values, migrated) = s.values().unwrap();
     assert!(values.is_empty() && migrated);
+}
+
+#[test]
+fn devices_holding_different_values_at_one_stamp_converge() {
+    let (_d1, a) = store();
+    let (_d2, b) = store();
+    a.migrate(&map(json!({ "language": "en" }))).unwrap();
+    b.migrate(&map(json!({ "language": "de" }))).unwrap();
+    let (pa, pb) = (a.export(), b.export());
+    a.upsert_record(SECTION, &pb).unwrap();
+    b.upsert_record(SECTION, &pa).unwrap();
+    assert_eq!(a.values().unwrap().0["language"], "en");
+    assert_eq!(b.values().unwrap().0["language"], "en");
+    assert_eq!(a.export(), b.export());
+}
+
+#[test]
+fn an_unadvanceable_received_stamp_is_dropped_and_a_stored_one_is_repaired() {
+    let (d, s) = store();
+    s.upsert_record(SECTION, &remote("language", json!("de"), u64::MAX))
+        .unwrap();
+    assert!(s.values().unwrap().0.is_empty(), "u64::MAX is not a clock");
+
+    // A value stored by an older build with a bad stamp: the next edit wins
+    // instead of overflowing.
+    rusqlite::Connection::open(d.path().join("portable_prefs.db"))
+        .unwrap()
+        .execute(
+            "UPDATE portable_prefs SET data = ?1 WHERE id = 1",
+            [
+                json!({ "keys": { "language": { "value": "de", "updatedAt": u64::MAX } } })
+                    .to_string(),
+            ],
+        )
+        .unwrap();
+    s.set(&map(json!({ "language": "en" })), 500).unwrap();
+    let e = &parse_wire(&s.export())["language"];
+    assert_eq!((e.value.clone(), e.updated_at), (json!("en"), 500));
+}
+
+#[test]
+fn restoring_a_section_without_a_keys_object_is_rejected_untouched() {
+    let (_d, s) = store();
+    s.set(&map(json!({ "language": "de" })), 5).unwrap();
+    for bad in [
+        json!({ "version": 1, "keys": [] }),
+        json!({ "version": 1 }),
+        json!({ "version": 1, "keys": "x" }),
+    ] {
+        assert!(s.import(&bad).is_err(), "{bad}");
+    }
+    assert_eq!(s.values().unwrap().0["language"], "de");
+    assert_eq!(s.import(&json!({ "version": 1, "keys": {} })).unwrap(), 0);
+    assert!(
+        s.values().unwrap().0.is_empty(),
+        "a valid empty keys object restores"
+    );
 }

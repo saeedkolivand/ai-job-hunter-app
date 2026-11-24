@@ -132,7 +132,7 @@ pub(crate) fn classify_requirements(description: &str) -> Vec<Requirement> {
         }
         if tier != Tier::Unspecified {
             out.push(Requirement {
-                text: line.chars().take(160).collect(),
+                text: line.to_string(),
                 tier,
             });
         }
@@ -161,6 +161,9 @@ pub(crate) struct MandatoryReport {
     pub(crate) to_verify: Vec<String>,
 }
 
+/// Char cap on a requirement line when shown back to the user.
+const REQ_DISPLAY_CHARS: usize = 160;
+
 pub(crate) fn mandatory_report(resume: &str, description: &str) -> MandatoryReport {
     let evidence = evidenced_levels(resume);
     let mut report = MandatoryReport::default();
@@ -168,16 +171,21 @@ pub(crate) fn mandatory_report(resume: &str, description: &str) -> MandatoryRepo
         .into_iter()
         .filter(|r| r.tier == Tier::Mandatory)
     {
-        let langs = language_levels(&req.text);
-        if langs.is_empty() {
-            if years_required(&req.text.to_lowercase()).is_some()
-                && !report.to_verify.contains(&req.text)
-            {
-                report.to_verify.push(req.text);
+        let lower = req.text.to_lowercase();
+        if years_required(&lower).is_some() {
+            // Analysis ran on the full line; only the displayed copy is truncated.
+            let shown: String = req.text.chars().take(REQ_DISPLAY_CHARS).collect();
+            if !report.to_verify.contains(&shown) {
+                report.to_verify.push(shown);
             }
-            continue;
         }
-        for (lang, need) in langs.into_iter().filter(|(_, l)| *l >= FLUENT) {
+        // An explicit must-have cue makes every stated level binding; the fluency threshold only
+        // decides which levels count when mandatory status was merely inferred.
+        let explicit = has_any(&lower, MANDATORY_CUES);
+        for (lang, need) in language_levels(&req.text)
+            .into_iter()
+            .filter(|(_, l)| explicit || *l >= FLUENT)
+        {
             match evidence.get(lang) {
                 Some(have) if *have < need => {
                     let gap = format!(
@@ -224,46 +232,103 @@ fn sentences(note: &str) -> Vec<&str> {
         .collect()
 }
 
-/// Drop every sentence that claims a fluent/native language the résumé does not evidence at that
-/// level, then append the ad's unmet must-haves. Never adds a positive claim.
-pub(crate) fn ground_note(note: &str, resume: &str, description: &str) -> String {
+/// Words that make a sentence a statement about the candidate: a restatement of the ad that also
+/// speaks about them ("You meet the requirement for fluent Italian") is still a claim.
+const CANDIDATE_WORDS: &[&str] = &[
+    "you",
+    "your",
+    "candidate",
+    "resume",
+    "résumé",
+    "cv",
+    "meet",
+    "meets",
+    "du",
+    "dein",
+    "deine",
+    "sie",
+    "ihr",
+    "tu",
+    "lei",
+];
+
+fn restates_the_ad(lower: &str) -> bool {
+    has_any(lower, ECHO_CUES)
+        && !lower
+            .split(|c: char| !c.is_alphanumeric())
+            .any(|w| CANDIDATE_WORDS.contains(&w))
+}
+
+/// The note's sentences minus every one that claims a fluent/native language the résumé does not
+/// evidence at that level.
+fn grounded_prose(note: &str, resume: &str) -> String {
     let evidence = evidenced_levels(resume);
-    let kept: Vec<&str> = sentences(note)
+    sentences(note)
         .into_iter()
         .filter(|s| {
-            let lower = s.to_lowercase();
-            if has_any(&lower, ECHO_CUES) {
-                return true;
-            }
-            !language_levels(s)
-                .iter()
-                .any(|(lang, l)| *l >= FLUENT && evidence.get(lang).copied().unwrap_or(0) < *l)
+            restates_the_ad(&s.to_lowercase())
+                || !language_levels(s)
+                    .iter()
+                    .any(|(lang, l)| *l >= FLUENT && evidence.get(lang).copied().unwrap_or(0) < *l)
         })
-        .collect();
-    let mut out = kept.join(" ");
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The ad's unmet / to-verify must-haves as appended note text ("" when there are none).
+fn report_suffix(resume: &str, description: &str) -> String {
     let report = mandatory_report(resume, description);
-    for (label, items) in [
+    [
         ("Unmet must-have", &report.gaps),
         ("To verify (must-have)", &report.to_verify),
-    ] {
-        if !items.is_empty() {
-            if !out.is_empty() {
-                out.push(' ');
-            }
-            out.push_str(&format!("{label}: {}.", items.join("; ")));
-        }
+    ]
+    .iter()
+    .filter(|(_, items)| !items.is_empty())
+    .map(|(label, items)| format!("{label}: {}.", items.join("; ")))
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+fn join_note(prose: &str, suffix: &str) -> String {
+    match (prose.is_empty(), suffix.is_empty()) {
+        (_, true) => prose.to_string(),
+        (true, false) => suffix.to_string(),
+        _ => format!("{prose} {suffix}"),
     }
-    out
+}
+
+/// Drop every sentence that claims a fluent/native language the résumé does not evidence at that
+/// level, then append the ad's unmet must-haves. Never adds a positive claim.
+#[cfg(test)]
+pub(crate) fn ground_note(note: &str, resume: &str, description: &str) -> String {
+    join_note(
+        &grounded_prose(note, resume),
+        &report_suffix(resume, description),
+    )
 }
 
 /// Char cap on a stored note — defense-in-depth on output size: the system prompt asks for 2–4
 /// sentences and the provider layer exposes no max-tokens knob.
 const NOTE_CAP: usize = 800;
 
-/// A raw completion → the stored note: trimmed, capped at [`NOTE_CAP`] chars, then [`ground_note`]d.
+/// A raw completion → the stored note: grounded, with prose + appended must-have report together
+/// within [`NOTE_CAP`] chars. The report (the warnings) is reserved first; the prose gives way.
 pub(crate) fn finish_note(text: &str, resume: &str, description: Option<&str>) -> String {
+    let suffix: String = report_suffix(resume, description.unwrap_or(""))
+        .chars()
+        .take(NOTE_CAP)
+        .collect();
+    let reserved = if suffix.is_empty() {
+        0
+    } else {
+        suffix.chars().count() + 1
+    };
     let capped: String = text.trim().chars().take(NOTE_CAP).collect();
-    ground_note(&capped, resume, description.unwrap_or(""))
+    let prose: String = grounded_prose(&capped, resume)
+        .chars()
+        .take(NOTE_CAP - reserved.min(NOTE_CAP))
+        .collect();
+    join_note(prose.trim_end(), &suffix)
 }
 
 #[cfg(test)]

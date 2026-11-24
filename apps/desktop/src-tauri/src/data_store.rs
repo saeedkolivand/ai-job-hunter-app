@@ -66,6 +66,12 @@ pub trait SyncSection {
     /// returns one record whose id is the section key.
     fn sync_records(&self) -> AppResult<Vec<SyncRecord>>;
 
+    /// True when `upsert_record` is a conflict-free merge (not a replace), so
+    /// the engine may apply a received record even when local state outranks it.
+    fn merges_received(&self) -> bool {
+        false
+    }
+
     /// Insert or replace the whole record `id` with `payload`.
     fn upsert_record(&self, id: &str, payload: &Value) -> AppResult<()>;
 

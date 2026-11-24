@@ -116,7 +116,11 @@ impl Resettable for ContactProfileStore {
 }
 impl Resettable for PortablePrefsStore {
     fn reset(&self) {
-        let _ = self.clear();
+        // `Resettable::reset` is infallible for every store; changing that
+        // contract is out of scope, so a failed clear is at least logged.
+        if let Err(e) = self.clear() {
+            log::warn!("[reset] portable preferences not cleared: {}", e.code());
+        }
     }
 }
 impl Resettable for AiConfigStore {

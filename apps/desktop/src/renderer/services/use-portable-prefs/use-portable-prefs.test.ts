@@ -74,6 +74,43 @@ describe('portable preferences migration', () => {
   });
 });
 
+describe('portable preferences write-through', () => {
+  it('keeps an edit made while the migration is pending over the migrated snapshot', async () => {
+    let finish: (v: unknown) => void = () => {};
+    const { mock, ...fn } = client({ values: {}, migrated: false });
+    fn.migrate.mockReturnValue(new Promise((r) => (finish = r)));
+    renderHookWithClient(() => usePortablePrefsSync(), { client: mock });
+    await waitFor(() => expect(fn.migrate).toHaveBeenCalledTimes(1));
+
+    await act(async () => {
+      usePreferencesStore.setState({ language: 'de' });
+    });
+    expect(fn.set).not.toHaveBeenCalled();
+    await act(async () => finish({ values: { language: 'en' }, migrated: true }));
+
+    await waitFor(() => expect(fn.set).toHaveBeenCalledWith({ language: 'de' }));
+    expect(usePreferencesStore.getState().language).toBe('de');
+  });
+
+  it('does not put a rejected write into the cache', async () => {
+    const { mock, ...fn } = client({ values: {}, migrated: true });
+    fn.set.mockRejectedValue(new Error('nope'));
+    const { queryClient } = renderHookWithClient(() => usePortablePrefsSync(), { client: mock });
+    await waitFor(() =>
+      expect(queryClient.getQueryState(keys.portablePrefs.all)?.status).toBe('success')
+    );
+
+    await act(async () => {
+      usePreferencesStore.setState({ outputTone: 'casual' });
+    });
+    await waitFor(() => expect(fn.set).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fn.get).toHaveBeenCalledTimes(2));
+    expect(queryClient.getQueryData<{ values: object }>(keys.portablePrefs.all)?.values).toEqual(
+      {}
+    );
+  });
+});
+
 describe('portable value mapping', () => {
   it('never lists per-device or secret settings', () => {
     const everything = {
@@ -129,5 +166,27 @@ describe('portable value mapping', () => {
     );
     expect(out.theme?.scheme).toBe('dark');
     expect(out.patch?.aiProviderConfig?.providers.codex?.effort).toBe('high');
+  });
+
+  it('clears a local effort the received map omits, keeping the provider model', () => {
+    const current = {
+      ...defaultPreferences,
+      aiProviderConfig: {
+        activeProvider: 'codex' as const,
+        providers: { codex: { model: 'm', effort: 'high' }, ollama: { model: 'o', effort: 'low' } },
+      },
+    };
+    const out = hydrationOf({ providerEffort: { codex: 'high' } }, current, DEFAULT_THEME_PREFS);
+    const providers = out.patch?.aiProviderConfig?.providers;
+    expect(providers?.ollama).toEqual({ model: 'o', effort: '' });
+    expect(providers?.codex?.effort).toBe('high');
+    expect(
+      hydrationOf({ providerEffort: {} }, current, DEFAULT_THEME_PREFS).patch?.aiProviderConfig
+        ?.providers.codex?.effort
+    ).toBe('');
+  });
+
+  it('reports clearing the last effort as a change', () => {
+    expect(portableOf(defaultPreferences).providerEffort).toEqual({});
   });
 });

@@ -51,15 +51,15 @@ const effortOf = (cfg: Preferences['aiProviderConfig']) => {
   for (const [provider, s] of Object.entries(cfg?.providers ?? {})) {
     if (s.effort) out[provider] = s.effort;
   }
-  return Object.keys(out).length ? out : undefined;
+  return out;
 };
 
 /** The portable slice of the store (the theme travels separately). */
 export const portableOf = (p: Preferences): PortableValues => {
   const out: PortableValues = {};
   for (const k of PLAIN_KEYS) if (p[k] !== undefined) out[k] = p[k];
-  const effort = effortOf(p.aiProviderConfig);
-  if (effort) out.providerEffort = effort;
+  // Always present (empty when none is set) so clearing the last effort is a change.
+  out.providerEffort = effortOf(p.aiProviderConfig);
   return out;
 };
 
@@ -91,6 +91,13 @@ export const hydrationOf = (
   if (effort.success) {
     const providers = { ...current.aiProviderConfig?.providers };
     let changed = false;
+    // An effort the sender no longer has is cleared here too (model and limits stay).
+    for (const [name, s] of Object.entries(providers)) {
+      if (s.effort && !(name in effort.data)) {
+        providers[name] = { ...s, effort: '' };
+        changed = true;
+      }
+    }
     for (const [name, level] of Object.entries(effort.data)) {
       if (providers[name]?.effort === level) continue;
       providers[name] = { ...(providers[name] ?? { model: '' }), effort: level };

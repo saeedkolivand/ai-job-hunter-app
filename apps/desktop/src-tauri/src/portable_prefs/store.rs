@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use super::{
-    is_portable, merge, parse_wire, to_wire, value_ok, Entry, Keys, SCHEMA_VERSION, SECTION,
+    is_portable, merge, parse_wire, to_wire, value_ok, Entry, Keys, MAX_UPDATED_AT, SCHEMA_VERSION,
+    SECTION,
 };
 use crate::data_store::{DataStore, SyncRecord, SyncSection};
 use crate::db::{run_migrations, Migration};
@@ -99,7 +100,11 @@ impl PortablePrefsStore {
                 if prev.is_some_and(|e| e.value == *value) {
                     continue;
                 }
-                let updated_at = prev.map_or(now, |e| now.max(e.updated_at + 1));
+                // A stored stamp beyond the bound (written by an older build)
+                // cannot be outranked; it is replaced, never incremented.
+                let updated_at = prev
+                    .filter(|e| e.updated_at <= MAX_UPDATED_AT)
+                    .map_or(now, |e| now.max(e.updated_at + 1));
                 row.keys.insert(
                     key.clone(),
                     Entry {
@@ -187,6 +192,13 @@ impl DataStore for PortablePrefsStore {
         if data.is_null() {
             return Ok(0);
         }
+        // A section without an object `keys` is damaged, not empty: restoring
+        // it would wipe every stored preference.
+        if !data.get("keys").is_some_and(Value::is_object) {
+            return Err(AppError::Validation(
+                "portable preferences backup has no 'keys' object".into(),
+            ));
+        }
         let keys = parse_wire(data);
         let n = keys.len();
         self.update(|row| {
@@ -212,6 +224,10 @@ impl SyncSection for PortablePrefsStore {
             id: SECTION.to_string(),
             payload: self.try_export()?,
         }])
+    }
+
+    fn merges_received(&self) -> bool {
+        true
     }
 
     fn upsert_record(&self, _id: &str, payload: &Value) -> AppResult<()> {

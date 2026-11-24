@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import type { AutopilotAvailabilityCheck, AutopilotBestMatch } from '@ajh/shared';
 import { useTranslation } from '@ajh/translations';
@@ -24,6 +24,7 @@ export function useBestMatchAvailability(prepare: (match: AutopilotBestMatch) =>
   const [results, setResults] = useState<Record<string, AutopilotAvailabilityCheck>>({});
   const [checking, setChecking] = useState<Set<string>>(new Set());
   const [warning, setWarning] = useState<AutopilotBestMatch | null>(null);
+  const prepareRequest = useRef(0);
 
   const runCheck = useCallback(
     async (match: AutopilotBestMatch) => {
@@ -57,7 +58,11 @@ export function useBestMatchAvailability(prepare: (match: AutopilotBestMatch) =>
 
   const handlePrepare = useCallback(
     async (match: AutopilotBestMatch) => {
+      // The latest Prepare owns the flow: a superseded request's late result is dropped.
+      const id = ++prepareRequest.current;
+      setWarning(null);
       const check = await runCheck(match);
+      if (id !== prepareRequest.current) return;
       if (check && isDead(check)) {
         setWarning(match);
         return;
@@ -71,9 +76,15 @@ export function useBestMatchAvailability(prepare: (match: AutopilotBestMatch) =>
   );
 
   const confirmPrepareAnyway = useCallback(() => {
+    prepareRequest.current++;
     if (warning) prepare(warning);
     setWarning(null);
   }, [warning, prepare]);
+
+  const dismissWarning = useCallback(() => {
+    prepareRequest.current++;
+    setWarning(null);
+  }, []);
 
   /** The row with any verdict from this visit applied over the snapshot's value. */
   const withVerdict = useCallback(
@@ -102,7 +113,7 @@ export function useBestMatchAvailability(prepare: (match: AutopilotBestMatch) =>
   return {
     checking,
     warning,
-    dismissWarning: () => setWarning(null),
+    dismissWarning,
     confirmPrepareAnyway,
     handleCheck,
     handlePrepare,

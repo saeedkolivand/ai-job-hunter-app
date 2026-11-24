@@ -82,3 +82,24 @@ fn a_device_without_the_section_holds_it_and_keeps_syncing_its_own() {
     assert_eq!(older.items.get("1"), Some(v("kept")));
     assert_eq!(report.pushed, 1, "its own sections still sync");
 }
+
+#[test]
+fn a_record_that_outranks_a_received_one_still_merges_its_newer_keys() {
+    let server = FakeServer::new();
+    let (a, b) = (PrefsDevice::new(), PrefsDevice::new());
+    a.set("language", json!("de"), 1);
+    a.sync(&server, 5);
+    b.sync(&server, 6);
+
+    // B edits and pushes at a low run rev; A edits locally and syncs at a
+    // higher one, so the record-level order says "local wins" (Ignore).
+    b.set("outputTone", json!("casual"), 10);
+    b.sync(&server, 15);
+    a.set("theme", json!("dark"), 20);
+    a.sync(&server, 50);
+
+    assert_eq!(a.get("outputTone"), Some(json!("casual")), "B's edit kept");
+    b.sync(&server, 60);
+    assert_eq!(b.get("theme"), Some(json!("dark")));
+    assert_eq!(b.get("outputTone"), Some(json!("casual")));
+}

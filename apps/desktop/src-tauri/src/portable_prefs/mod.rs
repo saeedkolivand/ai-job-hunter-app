@@ -40,6 +40,11 @@ pub const PORTABLE_KEYS: &[&str] = &[
     "theme",
 ];
 
+/// The largest accepted `updatedAt` (ms): the JS safe-integer bound, ~285k
+/// years. A larger stamp is not a clock reading; it would make every later
+/// local edit unable to outrank it.
+pub const MAX_UPDATED_AT: u64 = 1 << 53;
+
 /// A single value is a small setting; anything bigger is not one.
 const MAX_VALUE_BYTES: usize = 16 * 1024;
 
@@ -72,7 +77,8 @@ pub fn parse_wire(payload: &Value) -> Keys {
         .filter(|(k, _)| is_portable(k))
         .filter_map(|(k, e)| {
             let entry: Entry = serde_json::from_value(e.clone()).ok()?;
-            value_ok(&entry.value).then(|| (k.clone(), entry))
+            (value_ok(&entry.value) && entry.updated_at <= MAX_UPDATED_AT)
+                .then(|| (k.clone(), entry))
         })
         .collect()
 }
@@ -82,14 +88,21 @@ pub fn to_wire(keys: &Keys) -> Value {
     json!({ "version": SCHEMA_VERSION, "keys": keys })
 }
 
-/// Merge `remote` into `local` per key: a remote entry wins only when it is
-/// strictly newer (a tie keeps the local one). True when `local` changed.
+fn canonical(v: &Value) -> String {
+    v.to_string()
+}
+
+/// Merge `remote` into `local` per key: the newer entry wins; on equal
+/// timestamps the value whose canonical JSON sorts higher wins, so devices
+/// holding different values at one stamp converge. True when `local` changed.
 pub fn merge(local: &mut Keys, remote: Keys) -> bool {
     let mut changed = false;
     for (key, entry) in remote {
-        let newer = local
-            .get(&key)
-            .is_none_or(|mine| entry.updated_at > mine.updated_at);
+        let newer = local.get(&key).is_none_or(|mine| {
+            entry.updated_at > mine.updated_at
+                || (entry.updated_at == mine.updated_at
+                    && canonical(&entry.value) > canonical(&mine.value))
+        });
         if newer {
             local.insert(key, entry);
             changed = true;

@@ -210,6 +210,7 @@ pub(super) fn compute_best_matches(
     let mut by_key: HashMap<String, (&FoundJob, Vec<Origin>)> = HashMap::new();
     // First note carried by ANY copy of a key, so a note on a dropped duplicate copy survives.
     let mut copy_notes: HashMap<String, String> = HashMap::new();
+    let mut dead_urls: HashSet<String> = HashSet::new();
     for ap in records
         .iter()
         .filter(|ap| ap.status != AutopilotStatus::Archived)
@@ -218,6 +219,10 @@ pub(super) fn compute_best_matches(
         // A row held for identity review (issue #1445) is not a match until the
         // user dismisses it — its stored score belongs to a different advert.
         for job in ap.found_jobs.iter().filter(|j| j.identity_review.is_none()) {
+            // A verified-dead verdict on ANY copy kills that exact url (never the cluster).
+            if job.availability.is_some_and(Availability::is_dead) {
+                dead_urls.insert(crate::applications::normalize_job_url(&job.url));
+            }
             let key = crate::scraping::boards::common::canonical_job_key(
                 &job.url,
                 &job.title,
@@ -316,19 +321,25 @@ pub(super) fn compute_best_matches(
         }
 
         // Display fields come from the canonical member.
+        // A posting verified closed/removed is not an actionable recommendation (#1444). Judged
+        // per exact normalized url over every copy, so a repost under another url never inherits
+        // it. If the canonical member's url is dead but a same-role member's is not, that open
+        // member speaks for the cluster; only an all-dead cluster drops. The row stays in
+        // storage; only this view drops it.
+        let is_dead_url =
+            |i: usize| dead_urls.contains(&crate::applications::normalize_job_url(&jobs[i].url));
         let canonical_idx = idxs
             .iter()
             .copied()
             .find(|&i| assignments[i].canonical)
             .unwrap_or(idxs[0]);
-        let canonical = jobs[canonical_idx];
-
-        // A posting verified closed/removed is not an actionable recommendation (#1444). Judged
-        // on the canonical member's own url — the one the user would open — so a repost under
-        // another url never inherits it. The row stays in storage; only this view drops it.
-        if canonical.availability.is_some_and(Availability::is_dead) {
+        let Some(canonical_idx) = std::iter::once(canonical_idx)
+            .chain(idxs.iter().copied().filter(|&i| i != canonical_idx))
+            .find(|&i| !is_dead_url(i))
+        else {
             continue;
-        }
+        };
+        let canonical = jobs[canonical_idx];
 
         // The score above is the BEST-scored member's; `url` below is the
         // CANONICAL member's — two different selection rules over the same

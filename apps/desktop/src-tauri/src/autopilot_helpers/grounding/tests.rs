@@ -176,6 +176,73 @@ fn italian_ad_native_requirement_vs_b1_candidate() {
 }
 
 #[test]
+fn language_demand_past_the_display_cap_is_still_analysed() {
+    let ad = format!("Role details {} Fluent Italian required", "x ".repeat(100));
+    let report = mandatory_report(A2_B1_RESUME, &ad);
+    assert_eq!(
+        report.gaps,
+        vec!["Italian C1 required, résumé shows B1".to_string()]
+    );
+}
+
+#[test]
+fn years_check_runs_on_a_line_that_also_demands_a_language() {
+    let ad = "Fluent English and at least 7+ years of CRM experience required";
+    let report = mandatory_report("English C2", ad);
+    assert!(report.gaps.is_empty(), "{report:?}");
+    assert_eq!(report.to_verify, vec![ad.to_string()]);
+}
+
+#[test]
+fn explicit_mandatory_level_below_c1_is_compared() {
+    let report = mandatory_report("German A1", "German B2 required");
+    assert_eq!(
+        report.gaps,
+        vec!["German B2 required, résumé shows A1".to_string()]
+    );
+}
+
+#[test]
+fn candidate_claim_containing_require_is_not_exempt() {
+    let out = ground_note(
+        "You meet the requirement for fluent Italian.",
+        A2_B1_RESUME,
+        "",
+    );
+    assert!(!out.contains("fluent Italian"), "{out}");
+}
+
+#[test]
+fn finished_note_respects_the_cap_and_keeps_the_warnings() {
+    let note = "Strong retention background across many roles. ".repeat(40);
+    let out = finish_note(&note, A2_B1_RESUME, Some("Fluent Italian (C1) required."));
+    assert!(out.chars().count() <= NOTE_CAP, "{}", out.chars().count());
+    assert!(
+        out.ends_with("Unmet must-have: Italian C1 required, résumé shows B1."),
+        "{out}"
+    );
+}
+
+#[test]
+fn negated_fluency_is_not_evidence() {
+    assert_eq!(evidenced_levels("Italian: B1 (not fluent)")["Italian"], 3);
+}
+
+#[test]
+fn leading_level_is_shared_across_coordinated_languages() {
+    let e = evidenced_levels("fluent in English and Italian");
+    assert_eq!((e["English"], e["Italian"]), (5, 5));
+    let e = evidenced_levels("Italian B1 and English C2");
+    assert_eq!((e["Italian"], e["English"]), (3, 6));
+}
+
+#[test]
+fn levels_do_not_bleed_across_sentences() {
+    let e = evidenced_levels("Italian B1. English C2.");
+    assert_eq!((e["Italian"], e["English"]), (3, 6));
+}
+
+#[test]
 fn empty_or_garbled_inputs_are_harmless() {
     assert_eq!(ground_note("", "", ""), "");
     assert_eq!(mandatory_report("", ""), MandatoryReport::default());
