@@ -16,6 +16,21 @@ fn spaced_user_segment_leaves_no_surname() {
 }
 
 #[test]
+fn long_nbsp_and_unterminated_user_segments_leave_no_surname() {
+    for text in [
+        r"failed to open C:\Users\Ana Maria de Souza\AppData\app.exe now",
+        "failed to open /home/jane\u{a0}doe/.config/app now",
+        r#"failed to open "C:\Users\Jane Doe" now"#,
+        r"failed to open C:\Users\Jane Doe",
+    ] {
+        let out = redact_tokens(text).to_lowercase();
+        for name in ["doe", "souza", "maria"] {
+            assert!(!out.contains(name), "leaked `{name}`: {out}");
+        }
+    }
+}
+
+#[test]
 fn ordinary_prose_with_slashes_is_untouched() {
     let msg = "users and groups lookup failed, try again";
     assert_eq!(redact_tokens(msg), msg);

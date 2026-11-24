@@ -201,8 +201,10 @@ pub fn redact_tokens(text: &str) -> String {
 
 /// Glue the spaces inside a home-path user segment (`Users\First Last\…`,
 /// `home/first last/…`) with `_`, so the whitespace split in [`redact_tokens`]
-/// keeps the whole path in ONE token (#1530). Only a segment of at most three
-/// words, on one line, closed by a further separator, is touched.
+/// keeps the whole path in ONE token (#1530). The segment runs to the next path
+/// separator, quote, line break or end of text, whatever its word count —
+/// over-redacting a trailing phrase is the safe failure. Whitespace is the
+/// tokenizer's own (`char::is_whitespace`), so an NBSP cannot split it either.
 fn join_spaced_user_segment(text: &str) -> String {
     let lower = text.to_ascii_lowercase();
     let mut out = String::with_capacity(text.len());
@@ -214,22 +216,21 @@ fn join_spaced_user_segment(text: &str) -> String {
             .min();
         let Some((at, mlen)) = hit else { break };
         let seg_start = at + mlen;
-        let before_ok = at == 0 || !lower.as_bytes()[at - 1].is_ascii_alphanumeric();
-        let rest = &text[seg_start..];
-        let seg_end = rest
-            .find(['\\', '/', '\n'])
-            .filter(|&e| rest.as_bytes()[e] != b'\n');
-        match seg_end {
-            Some(e) if before_ok && e > 0 && rest[..e].split(' ').count() <= 3 => {
-                out.push_str(&text[pos..seg_start]);
-                out.push_str(&rest[..e].replace(' ', "_"));
-                pos = seg_start + e;
-            }
-            _ => {
-                out.push_str(&text[pos..seg_start]);
-                pos = seg_start;
-            }
+        out.push_str(&text[pos..seg_start]);
+        pos = seg_start;
+        if at > 0 && lower.as_bytes()[at - 1].is_ascii_alphanumeric() {
+            continue;
         }
+        let rest = &text[seg_start..];
+        let e = rest
+            .find(['\\', '/', '"', '\'', '\n', '\r'])
+            .unwrap_or(rest.len());
+        let glued: String = rest[..e]
+            .chars()
+            .map(|c| if c.is_whitespace() { '_' } else { c })
+            .collect();
+        out.push_str(&glued);
+        pos = seg_start + e;
     }
     out.push_str(&text[pos..]);
     out
