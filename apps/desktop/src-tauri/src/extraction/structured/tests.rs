@@ -192,3 +192,9 @@ fn a_comma_bearing_skills_segment_is_never_a_location() {
     let text = "Jane Doe\njane@example.com\n\nSKILLS\nRust, TypeScript | Python, SQL\n";
     assert!(structure(&extracted(text, vec![])).location.is_none());
 }
+
+#[test]
+fn a_letter_spaced_compound_heading_ends_the_location_scan() {
+    let text = "Jane Doe\njane@example.com\n\nS E L E C T E D   O P E N - S O U R C E   P R O J E C T S\nProject Alpha, Rust | Project Beta, SQL\n";
+    assert!(structure(&extracted(text, vec![])).location.is_none());
+}

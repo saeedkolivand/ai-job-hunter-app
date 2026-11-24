@@ -225,11 +225,13 @@ fn extract_name(text: &str) -> Field<String> {
 /// a `City, Country · email · phone` contact line still yields the city (#1561).
 /// Low confidence by nature.
 fn extract_location(text: &str) -> Option<Field<String>> {
-    // The header ends at the first section heading (letter-spaced ones included),
-    // so a skills line such as `Rust, TypeScript | Python, SQL` is never a city.
+    // The header ends at the first section heading, recognised exactly as the
+    // parser does (letter-spaced ones included), so a skills or projects line such
+    // as `Rust, TypeScript | Python, SQL` is never a city.
     let is_heading = |line: &str| {
         let clean = crate::export::parser::strip_md(line.trim());
-        is_known_section_name(&clean) || is_known_section_name(&clean.replace(' ', ""))
+        is_known_section_name(&clean)
+            || crate::export::parser::collapse_letterspaced_heading(&clean).is_some()
     };
     let segments = text
         .lines()

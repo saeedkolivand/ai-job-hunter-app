@@ -20,15 +20,22 @@ static KERNED_DIGITS: LazyLock<Regex> =
 
 /// Rejoin dates a PDF text layer kerned digit by digit (`0 2 /2 0 2 3` → `02/2023`,
 /// #1563), so every downstream date matcher sees the ordinary form. Only a 1-2 digit
-/// month before `/` or a 19xx/20xx year is rejoined; any other run (a kerned phone
-/// number, a list of single digits) is left as written.
+/// month before `/`, or a 19xx/20xx year with a date separator (`/`, `-`, `–`, `—`)
+/// directly beside it, is rejoined; any other run (a kerned phone number, a list of
+/// single digits, a lone `2 0 2 3` in body text) is left as written.
 pub fn rejoin_kerned_dates(text: &str) -> String {
+    let is_sep = |c: Option<char>| matches!(c, Some('/' | '-' | '–' | '—'));
     KERNED_DIGITS
         .replace_all(text, |c: &Captures| {
-            let run = &c[0];
+            let m = c.get(0).expect("whole match");
+            let run = m.as_str();
             let slash = run.trim_end().ends_with('/');
             let digits: String = run.chars().filter(char::is_ascii_digit).collect();
-            let year = digits.len() == 4 && (digits.starts_with("19") || digits.starts_with("20"));
+            let beside_sep = is_sep(text[..m.start()].trim_end().chars().last())
+                || is_sep(text[m.end()..].trim_start().chars().next());
+            let year = digits.len() == 4
+                && (digits.starts_with("19") || digits.starts_with("20"))
+                && beside_sep;
             match (slash, digits.len()) {
                 (true, 1..=2) => format!("{digits}/"),
                 (false, _) if year => digits,

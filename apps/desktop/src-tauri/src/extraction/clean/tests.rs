@@ -34,6 +34,14 @@ fn kerned_dates_are_rejoined_and_other_digit_runs_are_kept() {
     );
     assert_eq!(rejoin_kerned_dates("steps 1 2 3"), "steps 1 2 3");
     assert_eq!(
+        rejoin_kerned_dates("Exam scores: 2 0 2 3"),
+        "Exam scores: 2 0 2 3"
+    );
+    assert_eq!(
+        rejoin_kerned_dates("since 2 0 2 1 – now"),
+        "since 2021 – now"
+    );
+    assert_eq!(
         rejoin_kerned_dates("02/2023 - 01/2025"),
         "02/2023 - 01/2025"
     );
