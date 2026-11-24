@@ -1,5 +1,77 @@
 [
   {
+    "sha": "4b0672270fc398ebec9b4c01384f2c558df94045",
+    "commit": {
+      "message": "feat: review batches, job availability, portable preferences sync and grounded fit notes (#1557)",
+      "author": {
+        "date": "2026-11-24T13:32:33Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "6d24ea0a8c5fdb44bdb77a42d57d9b4669c7479e",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T11:55:48Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "da198059a8b400648e9c50700d606d6cb9f2d9f2",
+    "commit": {
+      "message": "fix: generation grounding (invented skills, cross-role bullets) and mcp export to file (#1556)",
+      "author": {
+        "date": "2026-11-24T11:30:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "71efc5c9b1fa5df9f1a1ab9c3eed52bb35879a36",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T10:58:59Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "658ee9546b96bc2fa652355ffd882d3476d692c2",
+    "commit": {
+      "message": "fix: open-issue sweep (crash redaction, export locale, benefits, projects, tailor template, status errors) (#1555)",
+      "author": {
+        "date": "2026-11-24T10:39:55Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "24986a5d3940f7ba9c55d87b7691e07c3a502636",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-23T12:31:55Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a7afda4c722d5c790155bc6d6eff1f4bb8662ae3",
     "commit": {
       "message": "chore: update mission-control snapshot data [skip ci]",
@@ -1125,78 +1197,6 @@
     },
     "author": {
       "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "7303ffaac379dff9a1d5ff6a42679e5ebe95b1b9",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-01T10:24:53Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fac8496ef45c0ec2031641e6748a191f60f988ac",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-31T09:35:46Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "24da8a787efa8efc58787f04c663dae55c094cb1",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-10-30T09:58:10Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "1b79bf6bc9bb3f98bc719cda8841cd1e9b942632",
-    "commit": {
-      "message": "chore: bump the javascript group across 1 directory with 6 updates (#1478)",
-      "author": {
-        "date": "2026-10-29T15:14:33Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "69f90c58f5477ff211bafa02c2b85227042732c3",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-10-29T12:53:18Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "e23820e1772ffcfa51ec902615eee9f108abe8f3",
-    "commit": {
-      "message": "chore: bump scraper from 0.27.0 to 0.29.0 in /apps/desktop/src-tauri (#1474)",
-      "author": {
-        "date": "2026-10-29T12:21:34Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
     }
   }
 ]
