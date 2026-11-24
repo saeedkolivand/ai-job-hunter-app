@@ -2,7 +2,8 @@
 //! entry it is attached to, not against the résumé as a whole.
 //!
 //! * a skill/tool the job ad names but the whole source never does
-//!   (`factual.unsupported_term`, Critical inside a role);
+//!   (`factual.unsupported_term`; its Critical twin fires for a tool-shaped
+//!   term in any section, a capitalised word only warns);
 //! * a skill/tool the source has, but under a different entry
 //!   (`factual.conflated_term`, Critical inside a role);
 //! * a location on a role the source gives that role no such location for;
@@ -78,7 +79,8 @@ fn names(terms: &[&Term]) -> String {
 
 /// Term findings for one line. `entry` is the kernel keys of the source entry
 /// the line belongs to, `None` when it has none to be checked against.
-/// `role` raises the Critical tier for tool-shaped terms. `evidence` defaults
+/// `role` raises the conflation Critical tier; an unsupported tool-shaped term
+/// is Critical in any section. `evidence` defaults
 /// to the first offending term's own spelling.
 pub(super) fn term_issues(
     g: &Grounding,
@@ -109,9 +111,11 @@ pub(super) fn term_issues(
             continue;
         }
         let (unsupported, strong) = (i < 2, i % 2 == 1);
-        // Conflation (a term spelled the same, under the wrong entry) needs no
-        // translation; only "absent from the source" does.
-        let critical = role && strong && (!unsupported || g.comparable);
+        // Conflation (a term spelled the same, under the wrong entry) needs an
+        // entry to be wrong about, so it is role-gated; an invented term is
+        // wrong anywhere, but only provably so when the source is comparable
+        // (no translation).
+        let critical = strong && if unsupported { g.comparable } else { role };
         let (code, message) = if unsupported {
             (
                 if critical {

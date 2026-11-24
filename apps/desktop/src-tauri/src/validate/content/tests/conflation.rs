@@ -67,15 +67,15 @@ fn a_job_ad_term_the_source_never_has_is_critical_inside_a_role() {
 }
 
 #[test]
-fn the_same_term_in_the_summary_only_warns() {
+fn the_same_term_in_the_summary_is_critical_too() {
     let generated = edited(
         "Eight years of backend work",
         "Eight years of backend work with GraphQL",
     );
     let report = report_for(&generated, EN_SOURCE, &ad_with_extra(), &[]);
-    assert_eq!(only(&report, FACTUAL_UNSUPPORTED_TERM).len(), 1);
-    silent(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
-    assert!(report.ok);
+    assert_eq!(only(&report, FACTUAL_UNSUPPORTED_ROLE_TERM).len(), 1);
+    silent(&report, FACTUAL_UNSUPPORTED_TERM);
+    assert!(!report.ok);
 }
 
 #[test]
@@ -126,7 +126,7 @@ Redis-backed double-entry",
 fn the_skills_section_is_judged_against_the_whole_resume() {
     let generated = edited("Terraform · Redis", "Terraform · Redis · GraphQL");
     let report = report_for(&generated, EN_SOURCE, &ad_with_extra(), &[]);
-    assert_eq!(only(&report, FACTUAL_UNSUPPORTED_TERM).len(), 1);
+    assert_eq!(only(&report, FACTUAL_UNSUPPORTED_ROLE_TERM).len(), 1);
     silent(&report, FACTUAL_CONFLATED_TERM);
     silent(&report, FACTUAL_CONFLATED_ROLE_TERM);
 }
@@ -247,4 +247,22 @@ fn the_thresholds_are_pinned() {
     assert_eq!(factual::MIN_BULLET_TOKENS, 4);
     assert_eq!(factual::MIN_BULLET_OVERLAP, 2);
     assert_eq!(factual::MIN_OUTCOME_TOKENS, 2);
+}
+
+#[test]
+fn a_weak_capitalised_term_in_the_summary_still_only_warns() {
+    let generated = edited(
+        "Eight years of backend work",
+        "Eight years of backend work with Zorblax",
+    );
+    let ad = format!("{EN_JOB_AD}\nYou will also use Zorblax.\n");
+    let report = report_for(&generated, EN_SOURCE, &ad, &[]);
+    silent(&report, FACTUAL_UNSUPPORTED_ROLE_TERM);
+    assert_eq!(
+        fired(&report, FACTUAL_UNSUPPORTED_TERM).len(),
+        1,
+        "{:#?}",
+        report.issues
+    );
+    assert!(report.ok, "{:#?}", report.issues);
 }

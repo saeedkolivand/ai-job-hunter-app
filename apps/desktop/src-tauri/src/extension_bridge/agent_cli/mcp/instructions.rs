@@ -48,7 +48,10 @@ pub(super) const INSTRUCTIONS: &str = "These tools talk to the running AI Job Hu
     have taken effect, so re-read the affected resource before repeating it. Do not retry a \
     rate_limited, connection_lost, or \"Too many requests\" result in a loop either — a \
     rate_limited result carries a retryAfterMs field; wait at least that long before re-sending \
-    the same call. A refusal's \
+    the same call. A documents_export_document result carries the exported file as a local \
+    `path` (absolute) plus `bytes`, `filename` and `mimeType`, not the file's contents: read \
+    the file at `path` if you need it. If the file could not be written there is no `path`, and \
+    the contents come inline as `data` with `dataEncoding` \"base64\" instead. A refusal's \
     own \"detail\" text is written for the plain CLI, not for these tools: a detail that says \
     `agent call ns:cmd` means call-read (or call-reversible, if enabled) with `namespace`/`command` set to \
     `ns`/`cmd`; `--confirm '<value>'` means this tool's own `confirm` argument, read on \

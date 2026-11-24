@@ -113,8 +113,8 @@ pub const FACTUAL_UNSUPPORTED_DATE: &str = "factual.unsupported_date";
 pub const FACTUAL_ALTERED_PROJECT_LINK: &str = "factual.altered_project_link";
 pub const FACTUAL_UNSOURCED_TERM: &str = "factual.unsourced_term";
 /// A skill/tool the job ad names, the source résumé never does, and the output
-/// claims. The Critical twin is the same finding inside a role entry (a named
-/// employer): two codes because a code has one severity, as with the credential
+/// claims. The Critical twin is the same finding for a tool-shaped term, in any
+/// section (skills, summary or a role entry): two codes because a code has one severity, as with the credential
 /// pair above. Both rest on the keyword kernel, never a raw substring.
 pub const FACTUAL_UNSUPPORTED_TERM: &str = "factual.unsupported_term";
 pub const FACTUAL_UNSUPPORTED_ROLE_TERM: &str = "factual.unsupported_role_term";
@@ -205,6 +205,9 @@ pub const CONSISTENCY_TITLE_DRIFT: &str = "consistency.title_drift";
 pub const CONSISTENCY_SKILL_NOT_DEMONSTRATED: &str = "consistency.skill_not_demonstrated";
 pub const CONSISTENCY_PROJECT_STRUCTURE: &str = "consistency.project_structure";
 pub const DUPLICATE_BULLET: &str = "duplicate.bullet";
+/// The same bullet under two different roles/projects: a claim belongs to one
+/// entry only. Critical twin of [`DUPLICATE_BULLET`].
+pub const DUPLICATE_CROSS_ROLE_BULLET: &str = "duplicate.cross_role_bullet";
 pub const ATS_KEYWORD_DENSITY: &str = "ats.keyword_density";
 pub const ATS_HEADER_IN_BODY: &str = "ats.header_in_body";
 /// A section heading survived into the generated document with nothing under
@@ -279,6 +282,7 @@ pub const CONTENT_ISSUE_CODES: &[(&str, Severity)] = &[
     (CONSISTENCY_SKILL_NOT_DEMONSTRATED, Severity::Warning),
     (CONSISTENCY_PROJECT_STRUCTURE, Severity::Warning),
     (DUPLICATE_BULLET, Severity::Warning),
+    (DUPLICATE_CROSS_ROLE_BULLET, Severity::Critical),
     (ATS_KEYWORD_DENSITY, Severity::Warning),
     (ATS_MISSING_SECTION, Severity::Warning),
     (ATS_LONG_BULLET, Severity::Warning),

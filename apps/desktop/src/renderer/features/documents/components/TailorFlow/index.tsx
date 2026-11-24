@@ -142,10 +142,6 @@ export function TailorFlow({
   const setStep = persistence.setWizardStep;
   // Sticky render-time template/ATS preference (single source of truth shared by
   // the preview and the export — see useTailorPipeline). Render-time only.
-  const setTemplateId = persistence.setTemplateId;
-  const setAtsMode = persistence.setAtsMode;
-  const setAccent = persistence.setAccent;
-  const setLetterLayoutId = persistence.setLetterLayoutId;
 
   const { methods, researchCompany, resumeId } = useTailorForm(
     persistence.wizardForm,
@@ -314,10 +310,10 @@ export function TailorFlow({
         accent={persistence.accent}
         letterLayoutId={persistence.letterLayoutId}
         market={gen.market}
-        onTemplateChange={setTemplateId}
-        onAtsModeChange={setAtsMode}
-        onAccentChange={setAccent}
-        onLetterLayoutChange={setLetterLayoutId}
+        onTemplateChange={persistence.setTemplateId}
+        onAtsModeChange={persistence.setAtsMode}
+        onAccentChange={persistence.setAccent}
+        onLetterLayoutChange={persistence.setLetterLayoutId}
         output={gen.output}
         onEdit={gen.editActiveOutput}
         meta={gen.meta}

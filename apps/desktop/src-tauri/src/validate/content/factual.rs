@@ -24,6 +24,7 @@ use self::employment::{dropped_role_issues, unsupported_date_issues};
 use self::links::project_link_issues;
 use self::metrics::unsourced_metric_issues;
 
+pub(super) use self::blocks::section_blocks;
 pub(super) use self::employment::count_roles;
 pub use self::employment::{MAX_SCANNED_ENTRIES, MIN_DISTINCTIVE_COMPANY_TOKEN_CHARS};
 pub use self::links::{canonical_link, link_href, names_a_resource, urls_in};

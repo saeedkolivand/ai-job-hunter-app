@@ -1968,7 +1968,8 @@
         "project_structure": "Ein Projekteintrag folgt nicht dem üblichen Format."
       },
       "duplicate": {
-        "bullet": "Dieser Aufzählungspunkt ähnelt stark einem anderen — erwäge, sie zusammenzuführen oder zu variieren."
+        "bullet": "Dieser Aufzählungspunkt ähnelt stark einem anderen — erwäge, sie zusammenzuführen oder zu variieren.",
+        "cross_role_bullet": "Dieser Aufzählungspunkt stammt aus einer anderen Station — eine Aussage gehört zu genau einer Rolle, also streiche ihn oder ersetze ihn durch etwas, das du in dieser Rolle wirklich getan hast."
       },
       "ats": {
         "keyword_density": "Die Schlüsselwortnutzung hier könnte überladen statt natürlich wirken.",
