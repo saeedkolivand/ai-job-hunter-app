@@ -199,20 +199,23 @@ pub(crate) fn mandatory_report(resume: &str, description: &str) -> MandatoryRepo
             continue;
         }
         let lower = req.text.to_lowercase();
-        if years_required(&lower).is_some() {
+        // An explicit must-have cue makes every stated level binding; the fluency threshold only
+        // decides which levels count when mandatory status was merely inferred.
+        let explicit = has_any(&lower, MANDATORY_CUES);
+        let levels: Vec<_> = language_levels(&req.text)
+            .into_iter()
+            .filter(|(_, l)| explicit || *l >= FLUENT)
+            .collect();
+        // Recognition is not evidence: a must-have we cannot evaluate against the résumé (years
+        // are unchecked, no language level) stays "to verify" so it never reads as a supported fit.
+        if years_required(&lower).is_some() || levels.is_empty() {
             // Analysis ran on the full line; only the displayed copy is truncated.
             let shown: String = req.text.chars().take(REQ_DISPLAY_CHARS).collect();
             if !report.to_verify.contains(&shown) {
                 report.to_verify.push(shown);
             }
         }
-        // An explicit must-have cue makes every stated level binding; the fluency threshold only
-        // decides which levels count when mandatory status was merely inferred.
-        let explicit = has_any(&lower, MANDATORY_CUES);
-        for (lang, need) in language_levels(&req.text)
-            .into_iter()
-            .filter(|(_, l)| explicit || *l >= FLUENT)
-        {
+        for (lang, need) in levels {
             match evidence.get(lang) {
                 Some(have) if *have < need => {
                     let gap = format!(

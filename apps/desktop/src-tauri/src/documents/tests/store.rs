@@ -302,7 +302,7 @@ fn test_clear_all_wipes_posting_vectors_and_match_scores() {
     assert!(store.get_posting_vector("job-1").is_some());
     assert!(store.get_match_score(&key).is_some());
 
-    store.clear_all();
+    store.clear_all().unwrap();
 
     // All four tables must be empty after a full reset.
     assert!(store.list().is_empty(), "clear_all() must wipe documents");

@@ -1,4 +1,5 @@
 use super::*;
+use crate::credentials::CredentialStore;
 
 // A store that cannot clear must be reported, and must not stop the others.
 struct FakeStore {
@@ -61,4 +62,27 @@ fn reset_result_success_and_browser_state_only_shapes_are_unchanged() {
     assert_eq!(v["success"], false);
     assert_eq!(v["browserStateRetained"], true);
     assert!(v.get("failedStores").is_none());
+}
+
+// A real store whose clear fails must be reported under its label, not Ok.
+#[test]
+fn a_real_store_that_fails_to_clear_is_reported_by_label() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let store = crate::referrals::ReferralStore::open(dir.path()).unwrap();
+    rusqlite::Connection::open(dir.path().join("referrals.db"))
+        .unwrap()
+        .execute_batch("DROP TABLE referrals")
+        .unwrap();
+    let failed = failed_labels([("referrals", store.reset())]);
+    assert_eq!(failed, vec!["referrals"]);
+}
+
+// An unreadable credential index must fail the reset (a missing one is just empty).
+#[test]
+fn credentials_reset_fails_on_a_corrupt_index_but_accepts_a_missing_one() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let new = || Mutex::new(CredentialStore::new(&dir.path().to_path_buf()));
+    new().reset().unwrap();
+    std::fs::write(dir.path().join("credential-meta.json"), "{x").unwrap();
+    assert!(new().reset().is_err());
 }

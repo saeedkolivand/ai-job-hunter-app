@@ -191,9 +191,9 @@ impl SpendStore {
         })
     }
 
-    pub fn clear_all(&self) {
-        let conn = self.conn.lock();
-        conn.execute("DELETE FROM ai_spend", []).ok();
+    pub fn clear_all(&self) -> AppResult<()> {
+        self.conn.lock().execute("DELETE FROM ai_spend", [])?;
+        Ok(())
     }
 
     /// Persist one call's real usage, computing its estimated cost from the

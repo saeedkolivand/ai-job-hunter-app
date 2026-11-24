@@ -142,7 +142,7 @@ fn clear_all_drops_the_mojibake_repair_snapshot_table() {
         .expect("the migration must have created and populated the snapshot table");
     assert_eq!(snapshot_rows, 1, "snapshot must hold the pre-repair row");
 
-    store.clear_all();
+    store.clear_all().unwrap();
 
     let table_exists: i64 = store
         .conn

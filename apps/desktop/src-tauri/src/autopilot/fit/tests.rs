@@ -94,6 +94,25 @@ fn snapshot_carries_note_and_fit_together_and_wire_omits_empties() {
 }
 
 #[test]
+fn a_note_from_a_copy_with_another_description_is_stale_beside_the_canonical_one() {
+    let copy = NoteSnapshot::of(&noted("cv", Some("copy jd"))).expect("has a note");
+    assert!(!copy.clone().shown_with(Some("copy jd")).fit.notes_stale);
+    assert!(
+        copy.clone()
+            .shown_with(Some("canonical jd"))
+            .fit
+            .notes_stale
+    );
+    assert!(copy.shown_with(None).fit.notes_stale);
+    assert!(
+        !NoteSnapshot::default()
+            .shown_with(Some("x"))
+            .fit
+            .notes_stale
+    );
+}
+
+#[test]
 fn legacy_record_without_the_fit_fields_deserializes_to_absent() {
     let json = r#"{"title":"t","company":"c","url":"u","foundAt":1,"assistantNotes":"old"}"#;
     let job: FoundJob = serde_json::from_str(json).expect("legacy found job");

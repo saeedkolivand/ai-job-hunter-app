@@ -61,6 +61,37 @@ fn a_blank_resurfaced_description_compares_against_the_kept_one() {
 }
 
 #[test]
+fn blank_resurface_with_changed_resume_regenerates_once_against_the_kept_description() {
+    let prior_ap = ap("cv", noted("cv", Some("jd")));
+    let mut inc = incoming(Some(""));
+    fill_blank_descriptions(&prior_ap, &mut inc);
+    assert_eq!(inc[0].description.as_deref(), Some("jd"));
+    assert!(crate::autopilot_helpers::grounding::apply_note(
+        &mut inc[0],
+        "Solid retention background.",
+        "cv v2"
+    ));
+    // The merge keeps "jd" (prior) — the stamp must match exactly that text.
+    assert_eq!(
+        inc[0].notes_basis.as_deref(),
+        Some(notes_basis("cv v2", Some("jd")).as_str())
+    );
+    // The next run (same résumé, blank again) leaves the stored row settled.
+    let next = Autopilot {
+        found_jobs: vec![inc.remove(0)],
+        ..ap("cv v2", noted("cv", Some("jd")))
+    };
+    assert!(settled_note_keys(&next, &incoming(Some(""))).contains(&key()));
+}
+
+#[test]
+fn non_blank_incoming_description_is_not_overwritten() {
+    let mut inc = incoming(Some("jd edited"));
+    fill_blank_descriptions(&ap("cv", noted("cv", Some("jd"))), &mut inc);
+    assert_eq!(inc[0].description.as_deref(), Some("jd edited"));
+}
+
+#[test]
 fn legacy_unstamped_and_unnoted_jobs_stay_settled() {
     let legacy = FoundJob {
         notes_basis: None,

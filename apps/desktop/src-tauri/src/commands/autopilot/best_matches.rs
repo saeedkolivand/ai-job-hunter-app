@@ -371,7 +371,8 @@ pub(super) fn compute_best_matches(
         let note = note_of(canonical_idx)
             .or_else(|| note_of(best_idx))
             .or_else(|| idxs.iter().find_map(|&i| note_of(i)))
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .shown_with(canonical.description.as_deref());
 
         // One `BestMatchSource` per distinct contributing autopilot — a
         // `BTreeMap` (not `HashMap`) so a cluster whose members span the same

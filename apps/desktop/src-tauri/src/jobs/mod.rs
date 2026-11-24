@@ -17,6 +17,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::db::now_ms;
+use crate::error::AppResult;
 
 /// Cancellation tokens for in-flight jobs/runs, keyed by id — the tracker's
 /// sibling: this module records what a job DID, `cancel` records how to STOP it.
@@ -233,11 +234,14 @@ impl JobTracker {
 
     /// Wipe the job-execution log — in-memory records and the `jobs` table.
     /// Used by the factory reset.
-    pub fn clear(&mut self) {
-        self.jobs.clear();
+    pub fn clear(&mut self) -> AppResult<()> {
+        // Delete persisted rows FIRST: on failure the in-memory view stays in
+        // step with what is still on disk instead of hiding it.
         if let Some(db) = &self.db {
-            let _ = db.execute("DELETE FROM jobs", []);
+            db.execute("DELETE FROM jobs", [])?;
         }
+        self.jobs.clear();
+        Ok(())
     }
 
     /// Move a live job between [`JobStatus::Queued`] and [`JobStatus::Running`].

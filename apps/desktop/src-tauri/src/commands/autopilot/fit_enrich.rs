@@ -15,7 +15,7 @@ pub(super) fn mark_notes_stale(ap: &mut Autopilot, resume: &str) {
 
 /// [`mark_notes_stale`] over a list, resolving each autopilot's effective résumé (its own text,
 /// else the default document). Skips autopilots with no notes, so most never read the document.
-pub(super) fn enrich_notes_stale(app: &AppHandle, list: &mut [Autopilot]) {
+pub(crate) fn enrich_notes_stale(app: &AppHandle, list: &mut [Autopilot]) {
     for ap in list
         .iter_mut()
         .filter(|a| a.found_jobs.iter().any(|j| j.assistant_notes.is_some()))

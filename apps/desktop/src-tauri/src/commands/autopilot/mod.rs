@@ -398,7 +398,7 @@ mod linkedin_enrich;
 //
 // Same LOC-cap reasoning as `rerank` above: `keyword_rank` holds the pure phase-1 helpers,
 // `run` the pipeline that drives both phases (`autopilot_run` below is its IPC entry point).
-mod fit_enrich;
+pub(crate) mod fit_enrich;
 mod guards;
 mod keyword_rank;
 mod phases;

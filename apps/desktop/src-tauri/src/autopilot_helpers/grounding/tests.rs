@@ -193,6 +193,16 @@ fn years_check_runs_on_a_line_that_also_demands_a_language() {
 }
 
 #[test]
+fn unevaluable_mandatory_requirement_is_to_verify_not_a_supported_fit() {
+    let ad = "Work authorization required for this role";
+    let report = mandatory_report("CRM manager", ad);
+    assert_eq!(report.to_verify, vec![ad.to_string()]);
+    assert_eq!(report.category("CRM manager"), FitCategory::Unknown);
+    let ok = mandatory_report("English C2", "English C1 required");
+    assert!(ok.to_verify.is_empty() && ok.category("cv") == FitCategory::SupportedFit);
+}
+
+#[test]
 fn explicit_mandatory_level_below_c1_is_compared() {
     let report = mandatory_report("German A1", "German B2 required");
     assert_eq!(

@@ -43,7 +43,7 @@ export function AiNote({ notes, fit }: { notes: string; fit: AutopilotNoteFit })
             </span>
           )}
           {fit.notesStale && (
-            <span className="text-[9px] italic text-foreground/60" data-testid="notes-stale">
+            <span className="text-[9px] italic text-foreground/70" data-testid="notes-stale">
               {t('autopilot.fit.stale')}
             </span>
           )}

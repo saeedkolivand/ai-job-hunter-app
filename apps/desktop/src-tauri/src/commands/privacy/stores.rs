@@ -41,8 +41,7 @@ impl Resettable for Mutex<InteractionStore> {
 }
 impl Resettable for Mutex<JobTracker> {
     fn reset(&self) -> AppResult<()> {
-        self.lock().clear();
-        Ok(())
+        self.lock().clear()
     }
 }
 impl Resettable for Mutex<CredentialStore> {
@@ -60,20 +59,17 @@ impl Resettable for Arc<Mutex<AutopilotStore>> {
 }
 impl Resettable for DocumentStore {
     fn reset(&self) -> AppResult<()> {
-        self.clear_all();
-        Ok(())
+        self.clear_all()
     }
 }
 impl Resettable for AiGenerationStore {
     fn reset(&self) -> AppResult<()> {
-        self.clear_all();
-        Ok(())
+        self.clear_all()
     }
 }
 impl Resettable for ApplicationStore {
     fn reset(&self) -> AppResult<()> {
-        self.clear_all();
-        Ok(())
+        self.clear_all()
     }
 }
 impl Resettable for JobPreferencesStore {
@@ -129,8 +125,7 @@ impl Resettable for AiConfigStore {
 }
 impl Resettable for ReferralStore {
     fn reset(&self) -> AppResult<()> {
-        self.clear_all();
-        Ok(())
+        self.clear_all()
     }
 }
 impl Resettable for NotificationStore {
@@ -151,16 +146,13 @@ impl Resettable for PipelineRunStore {
         // that left the events behind would keep a searchable record of which
         // postings the user ran, which is the thing being wiped.
         //
-        // `clear_all` attempts both tables and logs a refusal itself (it has no
-        // error return), so this store always reports `Ok`.
-        self.clear_all();
-        Ok(())
+        // `clear_all` attempts both tables and returns the first failure.
+        self.clear_all()
     }
 }
 impl Resettable for SpendStore {
     fn reset(&self) -> AppResult<()> {
-        self.clear_all();
-        Ok(())
+        self.clear_all()
     }
 }
 impl Resettable for EmailWatchStore {

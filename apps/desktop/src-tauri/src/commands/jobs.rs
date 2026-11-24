@@ -98,6 +98,20 @@ pub fn job_queued(app: &AppHandle, id: &str, ahead: usize) {
     emit_job_event(app, "job.queued", id, Some(json!({ "ahead": ahead })));
 }
 
+/// Pure core of [`job_is_cancelled`].
+fn cancelled_in_tracker(tracker: &JobTracker, id: &str) -> bool {
+    tracker
+        .get(id)
+        .is_some_and(|j| j.status == crate::jobs::JobStatus::Cancelled)
+}
+
+/// Whether the job was cancelled (e.g. a Stop while parked behind the limiter).
+/// Checked right after a slot is granted: `jobs_cancel` already emitted
+/// `job.cancelled`, so the caller just drops its guard and returns.
+pub fn job_is_cancelled(app: &AppHandle, id: &str) -> bool {
+    cancelled_in_tracker(&app.state::<Mutex<JobTracker>>().lock(), id)
+}
+
 /// The counterpart to [`job_queued`]: a slot opened up, status → `running`.
 pub fn job_dequeued(app: &AppHandle, id: &str) {
     app.state::<Mutex<JobTracker>>()

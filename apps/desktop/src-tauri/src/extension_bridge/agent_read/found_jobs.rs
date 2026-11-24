@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tauri::AppHandle;
 
-use super::list_autopilots;
+use super::list_autopilots_with_fit_freshness as list_autopilots;
 use crate::error::AppResult;
 use crate::extension_bridge::paging;
 

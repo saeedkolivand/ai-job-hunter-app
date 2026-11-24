@@ -43,12 +43,24 @@ pub(super) fn is_false(b: &bool) -> bool {
 pub struct NoteSnapshot {
     pub notes: Option<String>,
     pub fit: NoteFitView,
+    /// Stamp of the description of the copy this note sits on.
+    description_stamp: String,
 }
 
 impl NoteSnapshot {
+    /// This note as shown beside `description`: a note taken from a different copy of the posting
+    /// (another description) is labelled stale, whatever that copy's own flag says.
+    pub fn shown_with(mut self, description: Option<&str>) -> Self {
+        if self.notes.is_some() && self.description_stamp != short_hash(description.unwrap_or("")) {
+            self.fit.notes_stale = true;
+        }
+        self
+    }
+
     pub fn of(job: &FoundJob) -> Option<Self> {
         let notes = Some(job.assistant_notes.clone()?);
         Some(Self {
+            description_stamp: short_hash(job.description.as_deref().unwrap_or("")),
             notes,
             fit: NoteFitView {
                 mandatory_gaps: job.mandatory_gaps.clone(),

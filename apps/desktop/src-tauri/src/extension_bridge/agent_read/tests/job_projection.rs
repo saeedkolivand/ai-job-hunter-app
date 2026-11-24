@@ -22,6 +22,7 @@ fn job_projection_has_exact_keys_and_drops_forbidden_fields() {
             "isNew",
             "location",
             "mandatoryGaps",
+            "notesStale",
             "postedAt",
             "salaryCurrency",
             "salaryMax",
@@ -81,7 +82,6 @@ fn job_projection_never_carries_forbidden_keys() {
         "assistantNotes",
         "clusterId",
         "clusterCanonical",
-        "notesStale",
         "notesBasis",
     ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}");

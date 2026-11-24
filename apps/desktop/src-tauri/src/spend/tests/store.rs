@@ -92,7 +92,7 @@ fn clear_all_empties_the_store() {
     store.record(rec("openai", "gpt-4o", 100, 100));
     assert_eq!(store.list().len(), 1);
 
-    store.clear_all();
+    store.clear_all().unwrap();
     assert!(store.list().is_empty());
 }
 
@@ -102,7 +102,7 @@ fn data_store_export_import_round_trips_rows() {
     store.record(rec("gemini", "gemini-2.5-flash", 400, 200));
 
     let exported = store.export();
-    store.clear_all();
+    store.clear_all().unwrap();
     assert!(
         store.list().is_empty(),
         "precondition: cleared before import"

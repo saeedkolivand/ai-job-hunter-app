@@ -29,22 +29,10 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         json!({ "jobId": job_id })
     };
 
-    // 0. Anti-abuse: rate + concurrency cap. Rejected before any provider work so
-    // a looping/XSS'd renderer can't drive unbounded paid-API spend. The guard is
-    // held for the lifetime of the streamed generation (moved into the task), so
-    // the in-flight slot is released exactly when generation finishes.
     let limiter = app
         .state::<std::sync::Arc<crate::limits::Limiter>>()
         .inner()
         .clone();
-    let guard = match limiter.acquire(
-        "ai_generate",
-        crate::limits::AI_GENERATE_RATE_MAX,
-        crate::limits::AI_GENERATE_CONCURRENCY_MAX,
-    ) {
-        Ok(g) => g,
-        Err(e) => return fail(&app, &job_id, e.to_string()),
-    };
 
     // 1–3. Resolve the active provider from the BACKEND store (not the request):
     // provider present → known → model belongs to it, all validated inside
@@ -55,14 +43,6 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
         Err(e) => return fail(&app, &job_id, e.to_string()),
     };
 
-    // 4. Per-provider daily request ceiling — a coarse runaway-cost backstop.
-    if let Err(e) = limiter.charge_provider_daily(
-        completer.provider_id().as_str(),
-        crate::limits::PROVIDER_DAILY_MAX,
-    ) {
-        return fail(&app, &job_id, e.to_string());
-    }
-
     log::info!(
         "[ai] dispatch provider={}",
         completer.provider_id().as_str()
@@ -71,8 +51,49 @@ pub async fn ai_generate(app: AppHandle, req: AiGenerateRequest) -> Value {
     let job_id_clone = job_id.clone();
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
-        // Hold the concurrency guard for the whole stream; dropped here on completion.
-        let _guard = guard;
+        // 0. Anti-abuse: rate + concurrency cap, QUEUED (same as `generate_pipeline`):
+        // the rate window still rejects at admission, but a full concurrency cap
+        // parks the job (`queued`) instead of rejecting a deliberate click. The
+        // guard is held for the whole stream and released on drop.
+        let _guard = match limiter
+            .acquire_queued(
+                "ai_generate",
+                crate::limits::AI_GENERATE_RATE_MAX,
+                crate::limits::AI_GENERATE_CONCURRENCY_MAX,
+                crate::limits::AI_GENERATE_QUEUE_MAX,
+                |ahead| crate::commands::jobs::job_queued(&app_clone, &job_id_clone, ahead),
+            )
+            .await
+        {
+            Ok((guard, parked)) => {
+                if parked {
+                    crate::commands::jobs::job_dequeued(&app_clone, &job_id_clone);
+                }
+                guard
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                emit_stream_error(&app_clone, &job_id_clone, &msg);
+                crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
+                return;
+            }
+        };
+
+        if crate::commands::jobs::job_is_cancelled(&app_clone, &job_id_clone) {
+            return;
+        }
+
+        // 4. Per-provider daily request ceiling — a coarse runaway-cost backstop,
+        // charged AFTER admission so rejected calls never burn quota.
+        if let Err(e) = limiter.charge_provider_daily(
+            completer.provider_id().as_str(),
+            crate::limits::PROVIDER_DAILY_MAX,
+        ) {
+            let msg = e.to_string();
+            emit_stream_error(&app_clone, &job_id_clone, &msg);
+            crate::commands::jobs::job_fail(&app_clone, &job_id_clone, msg);
+            return;
+        }
         // `stream` overwrites `req.model` with the resolved active model, so the
         // provider/model/base_url all come from the store, never the request.
         if let Err(e) = completer.stream(&job_id_clone, req).await {

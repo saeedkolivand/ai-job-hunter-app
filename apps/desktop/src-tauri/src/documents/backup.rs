@@ -103,7 +103,7 @@ impl DataStore for DocumentStore {
             })
             .collect::<AppResult<_>>()?;
 
-        self.clear_all();
+        self.clear_all()?;
         let mut count = 0;
         let mut default_id: Option<String> = None;
         for (record, vector) in &parsed {

@@ -25,6 +25,7 @@ fn found_jobs_compact_row_has_exact_keys_by_default() {
             "isAgency",
             "location",
             "mandatoryGaps",
+            "notesStale",
             "score",
             "scoreProvisional",
             "title",
@@ -81,7 +82,6 @@ fn found_jobs_never_carries_forbidden_keys() {
         "clusterId",
         "clusterCanonical",
         "clusterMembers",
-        "notesStale",
         "notesBasis",
     ] {
         assert!(!text.contains(forbidden), "leaked {forbidden}");

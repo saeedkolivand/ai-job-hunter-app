@@ -194,6 +194,9 @@ pub(super) async fn assistant_notes_step(
     // merge then discarded, every single run.
     // EXCEPT a prior job whose note's résumé/description stamp went stale (#1446): that one
     // regenerates, and the merge adopts the new note.
+    // A blank re-surfaced description takes the prior row's text first: the merge keeps that
+    // text, so the note's stamp must be computed from it.
+    crate::autopilot_helpers::fill_blank_descriptions(autopilot, found_jobs);
     let prior_keys = crate::autopilot_helpers::settled_note_keys(autopilot, found_jobs);
 
     // Resolve the active provider from the BACKEND-OWNED store (task #16) through

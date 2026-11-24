@@ -14,7 +14,7 @@ fn clear_all_empties_both_tables() {
     let (_dir, store) = store();
     store.upsert_run(&run("run-1", "job-a", 10)).unwrap();
     store.append_event(&event("run-1", 0, "{}")).unwrap();
-    store.clear_all();
+    store.clear_all().unwrap();
     assert!(store.runs_for_job("job-a").is_empty());
     assert!(store.events_for_run("run-1").is_empty());
 }

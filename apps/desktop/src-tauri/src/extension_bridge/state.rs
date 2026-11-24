@@ -252,11 +252,36 @@ impl BridgeState {
 impl crate::data_store::Resettable for BridgeState {
     fn reset(&self) -> crate::error::AppResult<()> {
         self.regenerate_token();
-        self.set_autofill_enabled(false);
-        self.set_ai_assist(false);
-        self.set_autotrack_enabled(false);
-        self.set_save_answers_on_submit_enabled(false);
-        Ok(())
+        self.reset_optins()
+    }
+}
+
+impl BridgeState {
+    /// Turn every consent gate OFF in memory FIRST (a failed persist must never
+    /// leave one on), then persist all four, attempting each, and report the
+    /// first failure — a reset that could not erase the on-disk opt-in is not a
+    /// success, since the gate would re-open on the next launch.
+    fn reset_optins(&self) -> crate::error::AppResult<()> {
+        let _guard = self.optin_write_lock.lock();
+        self.autofill_enabled.store(false, Ordering::Relaxed);
+        self.ai_assist_enabled.store(false, Ordering::Relaxed);
+        self.autotrack_enabled.store(false, Ordering::Relaxed);
+        self.save_answers_on_submit_enabled
+            .store(false, Ordering::Relaxed);
+        let d = &self.data_dir;
+        let results = [
+            persist_autofill_optin(d, false),
+            persist_ai_assist_optin(d, false),
+            autotrack::persist_autotrack_optin(d, false),
+            save_answers_optin::persist_save_answers_on_submit_optin(d, false),
+        ];
+        match results.into_iter().find_map(Result::err) {
+            None => Ok(()),
+            Some(e) => Err(crate::error::AppError::Storage(format!(
+                "persist opt-in reset: {}",
+                sanitize_reason(&e.to_string())
+            ))),
+        }
     }
 }
 

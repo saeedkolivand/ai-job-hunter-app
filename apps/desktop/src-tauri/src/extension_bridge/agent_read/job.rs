@@ -8,7 +8,7 @@ use tauri::AppHandle;
 
 use crate::error::{AppError, AppResult};
 
-use super::list_autopilots;
+use super::list_autopilots_with_fit_freshness as list_autopilots;
 
 pub(super) mod resolve;
 
@@ -89,6 +89,9 @@ pub(in crate::extension_bridge::agent_read) struct AgentFit {
     to_verify: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     fit_category: Option<crate::autopilot::FitCategory>,
+    /// Freshness signal: the résumé or description changed since the fit was written.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    notes_stale: bool,
 }
 
 /// `job` resource payload — projected off `autopilot::FoundJob`. Excludes

@@ -92,6 +92,11 @@ pub const AI_RESEARCH_CONCURRENCY_MAX: usize = 3;
 pub const SCRAPE_RATE_MAX: usize = 30;
 /// `scrape_board` / `scrape_url`: at most this many in-flight at once.
 pub const SCRAPE_CONCURRENCY_MAX: usize = 2;
+/// `scrape_board` / `scrape_url`: at most this many callers PARKED waiting for a
+/// slot (see [`Limiter::acquire_queued`]). A user-started scrape that cannot run
+/// yet waits and shows `queued` instead of being rejected; beyond the cap the
+/// caller is rejected so the queue itself never becomes unbounded.
+pub const SCRAPE_QUEUE_MAX: usize = 20;
 
 /// `resume_pipeline_run` (`commands::resume_pipeline`, the staged résumé
 /// pipeline): at most this many starts per [`RATE_WINDOW`]. One run fans out

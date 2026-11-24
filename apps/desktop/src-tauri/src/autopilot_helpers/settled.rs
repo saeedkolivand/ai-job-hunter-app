@@ -36,5 +36,24 @@ pub(crate) fn settled_note_keys(autopilot: &Autopilot, incoming: &[FoundJob]) ->
         .collect()
 }
 
+/// Give a re-surfaced job with a blank description the prior row's text — the description the
+/// merge keeps — so a regenerated note is stamped against the text it will sit beside.
+pub(crate) fn fill_blank_descriptions(autopilot: &Autopilot, incoming: &mut [FoundJob]) {
+    let prior: HashMap<String, &str> = autopilot
+        .found_jobs
+        .iter()
+        .filter_map(|p| Some((key_of(p), p.description.as_deref()?)))
+        .filter(|(_, d)| !description_is_blank(Some(d)))
+        .collect();
+    for job in incoming
+        .iter_mut()
+        .filter(|j| description_is_blank(j.description.as_deref()))
+    {
+        if let Some(d) = prior.get(&key_of(job)) {
+            job.description = Some((*d).to_string());
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

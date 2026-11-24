@@ -17,7 +17,7 @@ use crate::scraping::{BoardScrapeSummary, BoardSearchInput, JobPosting, ScraperE
 mod grounding;
 pub(crate) mod linkedin_enrich;
 mod settled;
-pub(crate) use settled::settled_note_keys;
+pub(crate) use settled::{fill_blank_descriptions, settled_note_keys};
 
 /// The "don't cap me" item cap an autopilot scrape runs with (see `amount`
 /// below); a board returning this many was cut off, not exhausted.
