@@ -34,25 +34,47 @@ static NUMERIC_MONTH_TAIL: LazyLock<Regex> =
 /// date holds only the range.
 pub(super) fn split_gap_date(line: &str) -> Option<(&str, String)> {
     let idx = line.find("  ")?;
-    let tail = super::strip_md(line[idx..].trim_start());
-    let moved = date_start(&tail)
-        .filter(|&s| s > 0)
-        .and_then(|s| line.rfind(&tail[s..]));
+    let tail = line[idx..].trim_start();
+    // Measured on the raw tail (backing over an opening `**`) so a bold date
+    // still maps to its place in `line`.
+    let moved = date_start(tail)
+        .map(|s| tail[..s].trim_end_matches('*'))
+        .filter(|head| moves_split(head))
+        .map(|head| line.len() - tail.len() + head.len());
     Some(match moved {
-        Some(pos) => (line[..pos].trim_end(), super::strip_md(&line[pos..])),
-        None => (&line[..idx], tail),
+        Some(cut) => (
+            line[..cut]
+                .trim_end()
+                .trim_end_matches(['·', '|', '•'])
+                .trim_end(),
+            super::strip_md(&line[cut..]),
+        ),
+        None => (&line[..idx], super::strip_md(tail)),
     })
 }
 
-/// Byte offset where `text`'s date range begins, widened over a numeric month.
+/// The text between the gap and the date joins the title only when it holds a
+/// word (not just a `(` wrapper) and no phone or URL, so a contact line keeps
+/// its original split.
+fn moves_split(head: &str) -> bool {
+    head.chars().any(char::is_alphanumeric)
+        && !head.split(['|', '·', '•']).any(is_contactish_segment)
+}
+
+/// A month name or year as a whole word, so `Nov` in `Novartis` opens no range.
+static DATE_TOKEN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|19\d{2}|20\d{2})\b").unwrap()
+});
+
+/// Byte offset where `text`'s date range begins: the first whole date token a
+/// [`DATE_RE`] range starts at, widened over a numeric month.
 fn date_start(text: &str) -> Option<usize> {
-    let m = DATE_RE.find(text)?;
-    let head = &text[..m.start()];
-    Some(
-        NUMERIC_MONTH_TAIL
-            .find(head)
-            .map_or(m.start(), |p| p.start()),
-    )
+    let start = DATE_TOKEN
+        .find_iter(text)
+        .map(|m| m.start())
+        .find(|&s| DATE_RE.find(&text[s..]).is_some_and(|m| m.start() == 0))?;
+    let head = &text[..start];
+    Some(NUMERIC_MONTH_TAIL.find(head).map_or(start, |p| p.start()))
 }
 
 // A pipe/middot segment that IS a standalone single date — a bare year or
