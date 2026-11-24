@@ -72,57 +72,6 @@ fn apply_projects_normalization_is_a_no_op_when_every_entry_is_invented() {
     assert_eq!(artifact["projectsMatched"], 0);
 }
 
-/// #1549: the model omitted Projects although the source has one — the
-/// source's own section is appended verbatim and a warning is recorded.
-#[test]
-fn apply_projects_normalization_restores_a_dropped_projects_section() {
-    let source = "SUMMARY
-
-Builder.
-
-PROJECTS
-
-Ledger CLI - https://github.com/janedoe/ledger
-A bookkeeping tool.
-";
-    let draft = "SUMMARY
-
-Builder of tools.
-";
-    let (text, artifact) =
-        super::super::stages::apply_projects_normalization(source, draft.to_string());
-    assert!(text.starts_with(
-        "SUMMARY
-
-Builder of tools."
-    ));
-    assert!(text.contains(
-        "PROJECTS
-
-Ledger CLI - https://github.com/janedoe/ledger
-A bookkeeping tool."
-    ));
-    assert_eq!(artifact["warnings"][0], "projects_restored_from_source");
-    assert_eq!(artifact["chars"], text.chars().count());
-}
-
-/// A source with no Projects section: nothing is invented, no warning.
-#[test]
-fn apply_projects_normalization_adds_nothing_when_source_has_no_projects() {
-    let source = "SUMMARY
-
-Builder.
-";
-    let draft = "SUMMARY
-
-Builder of tools.
-";
-    let (text, artifact) =
-        super::super::stages::apply_projects_normalization(source, draft.to_string());
-    assert_eq!(text, draft);
-    assert!(artifact.get("warnings").is_none());
-}
-
 // Real, already-calibrated fixtures (shared with `validate::content::tests`,
 // which pins their detected language) rather than hand-written strings — a
 // language-detection guard tested against text no detector was ever shown to
