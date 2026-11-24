@@ -14,12 +14,12 @@ use super::employment::{
 use super::terms::keys;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Kind {
+pub(in crate::validate::content) enum Kind {
     Role,
     Project,
 }
 
-pub(super) struct Block<'a> {
+pub(in crate::validate::content) struct Block<'a> {
     pub kind: Kind,
     pub header: &'a ParsedLine,
     /// Everything under the header: bullets and plain lines.
@@ -59,7 +59,7 @@ fn project_name(header: &ParsedLine) -> String {
 
 /// The role or project entries of one section. Lines ahead of the first entry
 /// belong to no entry and are not returned.
-pub(super) fn section_blocks(section: &Section) -> Vec<Block<'_>> {
+pub(in crate::validate::content) fn section_blocks(section: &Section) -> Vec<Block<'_>> {
     match section.kind {
         SectionKind::Experience => {
             let mut blocks: Vec<Block> = Vec::new();

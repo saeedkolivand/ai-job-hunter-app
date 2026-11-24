@@ -36,6 +36,7 @@ mod coverage;
 mod credential_calibration;
 mod credential_corpus;
 mod dashes;
+mod duplicates_cross_role;
 mod employment;
 mod fixtures;
 mod institutions;

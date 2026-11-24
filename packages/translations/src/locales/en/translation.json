@@ -1964,7 +1964,8 @@
         "project_structure": "A project entry doesn't follow the usual format."
       },
       "duplicate": {
-        "bullet": "This bullet is very similar to another one — consider merging or varying it."
+        "bullet": "This bullet is very similar to another one — consider merging or varying it.",
+        "cross_role_bullet": "This bullet is copied from another role — a claim belongs to one role only, so cut it or replace it with something this role actually did."
       },
       "ats": {
         "keyword_density": "Keyword usage here may read as stuffed rather than natural.",

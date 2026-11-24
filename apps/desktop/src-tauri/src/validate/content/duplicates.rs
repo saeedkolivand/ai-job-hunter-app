@@ -6,9 +6,13 @@
 
 use std::collections::HashSet;
 
+use crate::documents::evidence::SectionKind;
 use crate::export::types::ParsedLine;
 
-use super::{issue, jaccard, Analysis, ContentIssue, DUPLICATE_BULLET};
+use super::factual::section_blocks;
+use super::{
+    issue, jaccard, Analysis, ContentIssue, DUPLICATE_BULLET, DUPLICATE_CROSS_ROLE_BULLET,
+};
 
 /// Token-set overlap at or above which two bullets are "the same bullet
 /// twice". 0.8 means four of every five distinct content words are shared —
@@ -56,6 +60,25 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, f64) {
         .flat_map(|s| s.bullets())
         .collect();
     bullets.truncate(MAX_DUP_BULLETS);
+    // Which role/project entry each bullet sits under (by identity of the line).
+    // Only Experience/Projects have entries: a Summary line is not "another role".
+    let mut entry_of: std::collections::HashMap<*const ParsedLine, (usize, Option<&str>)> =
+        std::collections::HashMap::new();
+    let mut n = 0;
+    for section in &ctx.generated_sections {
+        if !matches!(
+            section.kind,
+            SectionKind::Experience | SectionKind::Projects
+        ) {
+            continue;
+        }
+        for block in section_blocks(section) {
+            n += 1;
+            for line in block.body {
+                entry_of.insert(line as *const _, (n, section.heading.as_deref()));
+            }
+        }
+    }
     if bullets.len() < 2 {
         return (Vec::new(), 0.0);
     }
@@ -80,14 +103,30 @@ pub(super) fn validate(ctx: &Analysis) -> (Vec<ContentIssue>, f64) {
             }
             involved.insert(i);
             if involved.insert(j) {
-                issues.push(issue(
-                    DUPLICATE_BULLET,
-                    None,
-                    format!(
+                let entry = |b: &ParsedLine| entry_of.get(&(b as *const _)).copied();
+                let cross = entry(bullets[i])
+                    .zip(entry(bullets[j]))
+                    .is_some_and(|(a, b)| a.0 != b.0);
+                let (code, lead) = if cross {
+                    (
+                        DUPLICATE_CROSS_ROLE_BULLET,
+                        "This bullet is copied from another role. A claim belongs to one role \
+                         only; cut it or replace it with something this role actually did",
+                    )
+                } else {
+                    (
+                        DUPLICATE_BULLET,
                         "This bullet repeats an earlier one almost word for word. Cut it, or \
-                         replace it with a different result: \"{}\"",
-                        bullets[j].text
-                    ),
+                         replace it with a different result",
+                    )
+                };
+                // Only the cross-role Critical needs a section: it is what
+                // `repair` regenerates, so the run cannot park unresolvable.
+                let section = entry(bullets[j]).and_then(|e| e.1).filter(|_| cross);
+                issues.push(issue(
+                    code,
+                    section,
+                    format!("{lead}: \"{}\"", bullets[j].text),
                     Some(bullets[j].text.clone()),
                 ));
             }
