@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795521348153,
+  "lastUpdate": 1795528363789,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "f5fa164d0bd9d5386a1b6c40ae1819dbfaa1be0e",
-          "message": "feat: per-language help retrieval with cancellation, agent cli settings card, cross-os mcp smoke (#1102)\n\n* style: say why an outline-none class cannot opt out of the global focus ring\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: help retrieval drops function words per language and can be cancelled\n\nThe lexical arm ORs a question's tokens, so every \"how\", \"the\", \"ich\" was\nan extra branch matching most of the corpus. The request now carries the\nlocale its entries are written in, and a help-only function-word table per\nlanguage is passed into the lexical index as a parameter, so the retrieval\nmodule stays language-blind. The job-ad stopword lists were measured and\nrejected: their whole gain came from one content word, and the German one\nmoved nothing. The English eval measures 18 of 18 in the narrow top-2 (the\nfloor rises from 17); a new German eval of 14 hand-written cases carries the\nover-filtering guard, where one wrong entry turns a hit into a miss because\nFTS5 does no decompounding.\n\nAn optional caller-minted queryId with its own prefix registers the request\nin the app-wide cancel registry before any async work, mirroring the\npostings search; each embed is raced against the token and the arm reports\nunavailable on cancel. No new command and no new policy row.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: read command for the agent cli binary path, shared with the pointer file\n\nOne resolver in the platform layer answers where the binary lives as a user\nshould type it (the AppImage file rather than its transient mount), used by\nboth the launch-time pointer file and a new read-tier command the Settings\ncard queries. Full five-step IPC, policy row and the hand-written row count.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: agent cli and mcp card in developer settings\n\nThe binary's path with a copy button, an access-tier picker, and copyable\nClaude Code and Codex registration snippets with the real path quoted for\nthe shell and for TOML. Nothing claims PATH membership. The help answer that\nsaid there was no Settings row for this is corrected in both locales.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* feat: help chat cancels its retrieval on stop, navigation and supersede\n\nMints a prefixed queryId per question and hands it to the shared cancel\ncommand, so the dense arm gives up sooner instead of embedding to completion\nafter the user has moved on. The busy-state release stays as it was.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* test: mcp stdio smoke against the real binary, on macos and windows too\n\nAn integration test spawns the shipped executable in MCP mode and replays\nthe two sessions ADR-040 recorded by hand, asserting one frame per request\nin order, an empty stderr and exit 0. It gates on Linux through the existing\ntests job; an advisory matrix job runs it on the two platforms nothing else\nexecutes on.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help lexical arm reruns unfiltered when the drop list matched nothing\n\nThe token-list fallback could not see a question whose surviving tokens\nmatch no entry (\"Where is my stuff?\" keeps only \"stuff\"), so the arm\nreported a run with zero hits on the only arm a default install has. The\nfiltered query now falls back to the unfiltered expression once when it\nreturned no rows; the English eval gains that case and its floor rises to\n19. An omitted locale drops nothing instead of defaulting to English; the\nin-flight cancel is tested with an embedder that never returns; the\nGerman autopilot case is rephrased so it is a ranking, not a lookup; two\ndocs that described guards which do not exist are corrected.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: mcp smoke pins the child home so the sentinel is the one ci sees\n\nWith no pointer file the refusal is app_not_located, not app_not_running,\nso the test passed only on a machine where the app had launched. The\nchild now gets an empty temp home and the assertion is unconditional; the\nwatchdog prints frame ids, never bodies; the matrix step is marked\nadvisory like its siblings.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: publish the appimage path only when this process was launched from it\n\nThe AppImage runtime exports its variables to every descendant, so a .deb\ninstall started from another AppImage's terminal would have published a\nstranger's file as the command to type. The resolver now requires the\nimage to exist and the running binary to live under its mount, and the\npointer writer resolves the path itself so the choice is tested through\nthe function that publishes it.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat keeps the superseding question cancellable, root lang follows the ui locale\n\nA superseded run resolving late cleared the id its replacement had just\nminted, leaving the second question uncancellable; only the run that owns\nthe id may clear it. The document root's lang attribute now follows the\nactive locale, so screen readers voice German text with a German voice.\nThe ask button keeps its label on one line in German.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: agent cli card wraps its commands, escapes the path and says what the tier does\n\nThe command blocks wrap instead of scrolling, so the privilege flag is\nnever clipped and keyboard users can read the whole line; the path is\nescaped for the three characters live inside shell double quotes; the\nirreversible tier no longer promises a prompt the app does not show; the\ntier picker says it only rewrites the commands and hides when there is no\npath; the pending, error and label states use the right primitives; both\ndeveloper cards share one header. The help answer about the CLI names the\ncard and says the command runs in a terminal.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: record cancellation, per-language drop lists and the appimage resolver in the adrs\n\nADR-043 gains an amendment reversing its own no-cancellation tradeoff and\ndescribing the drop lists with the measured reason the job-ad lists were\nrejected; its unverified list is closed by the live run. ADR-040 records the\nsmoke test, the corrected never-launched sentinel and the Settings card.\nADR-037 names the pointer's new resolver. The agent CLI page gains an\nAppImage row and a pointer to the command and the card; the README says\nwhere the registration commands now live.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* test: placeholder user in the snippet test, frame body kept out of the smoke panic\n\nA test comment carried a real username; the refusal assertion interpolated\nthe frame body its own comment said it must not; the resolver doc claimed a\nNone condition the code does not have.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: double a backslash before a shell metacharacter in the registration snippet\n\nBash consumes a backslash pair inside double quotes and leaves the\nmetacharacter after it active, so a path ending in a backslash followed by a\nbacktick opened a command substitution after the previous escaping. A\nbackslash that precedes a dollar sign, a backtick, a double quote or another\nbackslash is doubled first; every other backslash stays literal so an\nordinary Windows path survives for PowerShell and cmd. Tests run the escaped\nstring through a real bash where one is available.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: help chat keeps one locale for a whole run\n\nThe language was read twice per question, once for the retrieval request\nand once for the generation call after the await, so a switch during\nretrieval mixed locales. It is read once at the top now. The settings-title\nparity test asserts a non-empty title before the containment check.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* fix: hide the binary path command from the agent tier\n\nA CLI or MCP client already holds the path it launched the binary from, so\nreaching this command through the agent tier added nothing it could use and\nput a home-directory path into a persisted transcript. The row is not\nexposed; the renderer still reaches the command over IPC, and a test drives\nthe real row through the real gate.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n* docs: point the agent cli page at the sources that own each platform fact\n\nThe per-platform table of install paths and PATH behaviour is replaced by\npointers to the installer hook, the cask, the bundle config and the AppImage\npredicate, and two release-version literals leave the README. ADR-040 no\nlonger describes the path command as agent-reachable.\n\nCo-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_012EQX4DcucKiSdacnJHHxgz\n\n---------\n\nCo-authored-by: Claude Fable 5.1 <noreply@anthropic.com>",
-          "timestamp": "2026-09-03T06:08:31+02:00",
-          "tree_id": "14fb78edcbd6803bad702098430938ef0284d853",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/f5fa164d0bd9d5386a1b6c40ae1819dbfaa1be0e"
-        },
-        "date": 1788409955100,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2266323,
-            "range": "± 13027",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2661586,
-            "range": "± 76440",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 298117,
-            "range": "± 1689",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 559038,
             "range": "± 7880",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4b0672270fc398ebec9b4c01384f2c558df94045",
+          "message": "feat: review batches, job availability, portable preferences sync and grounded fit notes (#1557)\n\n* fix(matching): ground fit notes in evidenced language levels and must-have requirements\n\nClassify ad requirements as must-have or preferred (en/de/it), list unmet must-haves, and drop note sentences that claim a language level the resume does not show (#1446 slice 1).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* feat(sync): sync portable profile and preferences across devices\n\nBackend-owned allowlisted preferences store with per-key last-writer-wins, a one-time migration from renderer storage that never overwrites received values, and refresh after sync (#1433).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* feat(discovery): stable review batches, verified availability and exact applied labels\n\nFreeze the best-matches batch with review counts and separate open advert from prepare (#1449).\nCheck posting availability on demand and before prepare; failures stay unknown (#1444).\nLabel exact vs related applications and show withdrawn rows as withdrawn (#1447).\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n* fix: address review findings on grounding, availability and preferences sync\n\n- grounding analyses full requirements, checks years and explicit sub-C1 levels, ignores negation and sentence bleed, and keeps notes under the cap\n- availability hides every copy of a dead url, ignores script text, treats a truncated read as unknown, and lets one Prepare own its warning\n- preferences break ties convergently, reject bad timestamps and keyless restores, merge received keys when local outranks, and keep edits made during migration\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nClaude-Session: https://claude.ai/code/session_01935QFc3teThuBaxXAzYL6Z\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-24T14:32:33+01:00",
+          "tree_id": "133d323696cde8145b7477a683e6b038f822a803",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/4b0672270fc398ebec9b4c01384f2c558df94045"
+        },
+        "date": 1795528363144,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 1777415,
+            "range": "± 37914",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2169318,
+            "range": "± 30839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 437513,
+            "range": "± 9857",
             "unit": "ns/iter"
           }
         ]
