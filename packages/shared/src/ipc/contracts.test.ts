@@ -37,6 +37,7 @@ describe('IPC_CHANNELS', () => {
         'linkedin',
         'match',
         'notifications',
+        'portablePrefs',
         'privacy',
         'referrals',
         'resume',

@@ -34,6 +34,7 @@ import {
   useAutoIndex,
   useExtensionBridgeEvents,
   useNotificationEvents,
+  usePortablePrefsSync,
   useSyncCloseToTray,
   useSyncDataRefresh,
   useSyncSalaryExpectation,
@@ -196,6 +197,8 @@ function RootLayout() {
   // Push the persisted close-to-tray preference to the shell once on boot.
   useSyncCloseToTray();
   useSyncDataRefresh();
+  // Mirror the portable settings (#1433) to the backend store that syncs them.
+  usePortablePrefsSync();
   // Push the persisted salary expectation onto the backend job_preferences
   // store once on boot (Task #30) — existing users' saved value lands there.
   useSyncSalaryExpectation();

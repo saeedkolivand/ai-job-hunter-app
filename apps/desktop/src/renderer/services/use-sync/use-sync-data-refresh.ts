@@ -21,6 +21,7 @@ export const useSyncDataRefresh = () => {
       keys.documents.all,
       keys.aiGenerations.all,
       keys.contactProfile.all,
+      keys.portablePrefs.all,
       keys.jobPreferences.all,
       keys.ai.activeConfig,
       keys.ai.stageOverrides,

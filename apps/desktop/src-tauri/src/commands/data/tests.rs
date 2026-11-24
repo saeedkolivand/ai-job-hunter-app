@@ -106,6 +106,41 @@ fn the_run_store_round_trips_through_the_bundle_contract() {
     assert_eq!(restored.run("run-1"), source.run("run-1"));
 }
 
+/// The portable preferences travel in the bundle as an object section: a REAL
+/// export passes the pre-pass, restores into a fresh store, and drops a key
+/// outside the allowlist that a hand-edited bundle smuggled in. A bundle
+/// WITHOUT the section (an older backup) is valid and carries nothing to restore.
+#[test]
+fn the_portable_preferences_round_trip_through_the_bundle_contract() {
+    use crate::portable_prefs::PortablePrefsStore;
+
+    let dir = TempDir::new().unwrap();
+    let source = PortablePrefsStore::open(&dir.path().to_path_buf()).unwrap();
+    source
+        .set(json!({ "language": "de" }).as_object().unwrap(), 5)
+        .unwrap();
+    let key = source.key();
+    assert!(
+        OBJECT_SECTIONS.contains(&key),
+        "'{key}' is not a known section"
+    );
+
+    let mut exported = source.export();
+    exported["keys"]["apiKey"] = json!({ "value": "sk-secret", "updatedAt": 9 });
+    let stores = json!({ key: exported });
+    validate_sections(&stores).expect("a REAL export must satisfy the pre-pass");
+    validate_sections(&json!({})).expect("an older bundle without the section is valid");
+
+    let dir2 = TempDir::new().unwrap();
+    let restored = PortablePrefsStore::open(&dir2.path().to_path_buf()).unwrap();
+    assert_eq!(restored.import(&stores[key]).unwrap(), 1);
+    let (values, _) = restored.values().unwrap();
+    assert_eq!(
+        serde_json::Value::Object(values),
+        json!({ "language": "de" })
+    );
+}
+
 /// Pull the type argument out of every `try_state::<T>()` in `src`.
 ///
 /// The needle is assembled at runtime, never written out as one literal:

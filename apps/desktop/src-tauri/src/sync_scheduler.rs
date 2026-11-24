@@ -29,6 +29,7 @@ use crate::documents::DocumentStore;
 use crate::error::{AppError, AppResult};
 use crate::job_preferences::JobPreferencesStore;
 use crate::pipeline::runs::PipelineRunStore;
+use crate::portable_prefs::PortablePrefsStore;
 use crate::posting_history::PostingHistoryStore;
 use crate::postings::{InteractionStore, InteractionsSection};
 use crate::referrals::ReferralStore;
@@ -167,6 +168,7 @@ fn with_sections<R>(
     let applications = need::<ApplicationStore>(app, "applications")?;
     let prefs = need::<JobPreferencesStore>(app, "job preferences")?;
     let contact = need::<ContactProfileStore>(app, "contact profile")?;
+    let portable = need::<PortablePrefsStore>(app, "portable preferences")?;
     let ai_config = need::<AiConfigStore>(app, "AI provider config")?;
     let referrals = need::<ReferralStore>(app, "referrals")?;
     let autopilots = need::<Arc<Mutex<AutopilotStore>>>(app, "autopilots")?;
@@ -179,13 +181,14 @@ fn with_sections<R>(
 
     let events = ApplicationStatusEvents(applications.inner());
     let interactions = InteractionsSection(interactions.inner());
-    let sections: [&dyn SyncSection; 15] = [
+    let sections: [&dyn SyncSection; 16] = [
         documents.inner(),
         generations.inner(),
         applications.inner(),
         &events,
         prefs.inner(),
         contact.inner(),
+        portable.inner(),
         ai_config.inner(),
         referrals.inner(),
         // Locked per call, never across a run's network I/O.

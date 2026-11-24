@@ -8,6 +8,7 @@ export {
   DEFAULT_THEME_PREFS,
   getResolvedScheme,
   getThemePrefs,
+  onThemeApplied,
   reapplySystemAccent,
   restoreTheme,
   type TextScale,

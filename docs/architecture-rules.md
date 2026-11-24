@@ -1,6 +1,6 @@
 # Architecture Rules — Rust/Tauri Core
 
-Last updated: 2026-11-18
+Last updated: 2026-11-24
 
 > **Status:** enforceable rules (Phase 2), derived from the June 2026 architecture
 > discovery analysis (now in git history) — the **actual** structure of
@@ -21,7 +21,7 @@ L3  Shell / IPC        commands, ipc_contracts, lib, app_menu, shell, main, upda
 L2  Application        pipeline, cover_letter, autopilot, autopilot_scheduler,
                        autopilot_helpers, recommend, salary_research, sync, insights
 L1  Domain             scraping, extraction, export, documents, jobs, postings, dedup,
-                       conversations, credentials, job_preferences, contact_profile, ai_generations,
+                       conversations, credentials, job_preferences, contact_profile, portable_prefs, ai_generations,
                        discovered, posting_history, spend, applications, referrals, profile_import, model, layout, measure,
                        validate, retrieval,
                        locale, theme, ai_provider
