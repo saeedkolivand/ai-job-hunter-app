@@ -1,5 +1,149 @@
 [
   {
+    "sha": "a115632bb33d23b77fdde132f8bee9e2e687d09c",
+    "commit": {
+      "message": "build(ui): add the react vite plugin to the storybook build (#1567)",
+      "author": {
+        "date": "2026-11-25T06:11:32Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "446f78e8156021b791e632d4db9cb36630eda4fa",
+    "commit": {
+      "message": "chore: sync landing download version to v0.164.0",
+      "author": {
+        "date": "2026-11-24T23:36:45Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "17e7e2e5778c972aabbf76ccee895d200495287e",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.164.0 [skip ci]",
+      "author": {
+        "date": "2026-11-24T23:36:14Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "c54cdf8f5c7d7536ce13c9cf4d430ecf18d1f5e4",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T23:05:37Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c6eb762e1e54c462218e8a0c725f08a43e7457ef",
+    "commit": {
+      "message": "chore(release): 0.164.0 [skip ci]",
+      "author": {
+        "date": "2026-11-24T22:44:30Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "b496887c8c5f4e09a82827a71fe17499b3c2ac6c",
+    "commit": {
+      "message": "fix: split an entry date glued to the company in pdf imports (#1565)",
+      "author": {
+        "date": "2026-11-24T22:39:27Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "6074a2caa38e8d64808f860cf6b662b119cdc7c1",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T19:45:30Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c594b86badf1cc69cfe8db4d5a596769e92cb7cc",
+    "commit": {
+      "message": "fix: résumé import header parsing (hyphenated spaced headings, city on contact line) (#1562)",
+      "author": {
+        "date": "2026-11-24T19:22:58Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "cab75edd3cab577da3a4631fe6881af46cbea651",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T17:44:01Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "c2e62bf7e9c0a245d2709203522d47aaf3cf9a0b",
+    "commit": {
+      "message": "fix: structured fit notes, factory-reset failure reporting and queued scrape status (#1560)",
+      "author": {
+        "date": "2026-11-24T17:19:08Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "68877483f08dde84a0fdbcf14974a9f8c0f1eeda",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-24T13:52:43Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "e3aa8c9dfe1e62819a02a5888e2221f7892aa3d3",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-24T13:39:08Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "4b0672270fc398ebec9b4c01384f2c558df94045",
     "commit": {
       "message": "feat: review batches, job availability, portable preferences sync and grounded fit notes (#1557)",
@@ -1049,150 +1193,6 @@
       "message": "chore: update mission-control snapshot data [skip ci]",
       "author": {
         "date": "2026-11-09T11:27:19Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "d465c2c52ca07844750e986b5aee4c3f7650af62",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-08T10:16:47Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "533e0cc715a40989664bc56b8c3c68a3c61dc215",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-07T10:02:57Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a65b67e538b35129a59aa01a67e8b166915f5366",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-06T10:49:47Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "fac77234194be43c67b7c58fb836ec309f70f1aa",
-    "commit": {
-      "message": "chore: bump @hookform/resolvers from 6.0.1 to 7.0.2 (#1484)",
-      "author": {
-        "date": "2026-11-05T17:27:53Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "4150e63f79ac369ab5e27515f6793b641950ab98",
-    "commit": {
-      "message": "chore: bump the javascript group with 28 updates (#1483)",
-      "author": {
-        "date": "2026-11-05T17:24:12Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "40d818af88d5c14b1402a6ddd5eedc75606590da",
-    "commit": {
-      "message": "chore: bump the ci-actions group with 3 updates (#1482)",
-      "author": {
-        "date": "2026-11-05T17:23:46Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "45c9da0839a8c1e43d2c559a64912a6d132b7108",
-    "commit": {
-      "message": "chore: bump sysinfo from 0.39.6 to 0.40.1 in /apps/desktop/src-tauri (#1481)",
-      "author": {
-        "date": "2026-11-05T17:23:22Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "3371df11d3faa2e52c0699e27cd9bf8b500eac4b",
-    "commit": {
-      "message": "chore: bump dom_smoothie in /apps/desktop/src-tauri (#1480)",
-      "author": {
-        "date": "2026-11-05T17:23:03Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "a57ff8b83b5477d7ede4eeede0411aa205945de7",
-    "commit": {
-      "message": "chore: bump the desktop-rust group (#1479)",
-      "author": {
-        "date": "2026-11-05T17:22:47Z"
-      }
-    },
-    "author": {
-      "login": "dependabot[bot]"
-    }
-  },
-  {
-    "sha": "c133b37ae50935df7f67e2b618d20401ce656c3c",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-05T10:50:52Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "5f5a78b8de44d9a3496171c3227e173648983a50",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-03T10:49:09Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "2fba0e6e454d9cc58ab5f206ac967f81486a0232",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-02T10:59:33Z"
       }
     },
     "author": {
