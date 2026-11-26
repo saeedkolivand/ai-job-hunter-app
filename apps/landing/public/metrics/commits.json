@@ -1,5 +1,125 @@
 [
   {
+    "sha": "844b43bc7374ce9dffa22d54482a72ea83f0ab2a",
+    "commit": {
+      "message": "build(ui): drop the redundant storybook vitest setup file (#1577)",
+      "author": {
+        "date": "2026-11-26T07:05:54Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "443b4aa09cd5f0090da99d016fa6d28e61474a2c",
+    "commit": {
+      "message": "chore: bump the javascript group across 1 directory with 24 updates (#1574)",
+      "author": {
+        "date": "2026-11-26T07:05:21Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "f148a5e0d6461d66ae5b28d1bdeecd8680d8284d",
+    "commit": {
+      "message": "chore: bump @testing-library/jest-dom from 7.0.1 to 8.0.0 (#1575)",
+      "author": {
+        "date": "2026-11-25T17:34:47Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "efc8b2177659c38213059ef2fb960dcb1b25fb55",
+    "commit": {
+      "message": "chore: bump the ci-actions group with 4 updates (#1573)",
+      "author": {
+        "date": "2026-11-25T17:32:40Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "a3920a1a8fe239b4d73bf367905acd57d9e230b9",
+    "commit": {
+      "message": "chore: bump the codeql-action group with 3 updates (#1572)",
+      "author": {
+        "date": "2026-11-25T17:32:11Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "41990e47260c999668cb89089355c22291299615",
+    "commit": {
+      "message": "chore: bump the desktop-rust group (#1571)",
+      "author": {
+        "date": "2026-11-25T17:31:32Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "b88c3b2edcff9eac73638706a84e01052af19c28",
+    "commit": {
+      "message": "chore: bump dom_smoothie in /apps/desktop/src-tauri (#1570)",
+      "author": {
+        "date": "2026-11-25T17:31:15Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "a7f12bec32484026eafac580b761fa83ffea0b60",
+    "commit": {
+      "message": "chore: bump htmd from 0.5.6 to 0.6.0 in /apps/desktop/src-tauri (#1569)",
+      "author": {
+        "date": "2026-11-25T17:30:57Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "c9a86c0b2051522b98cdf76808ce38c39f7110fb",
+    "commit": {
+      "message": "chore: bump the vitest group with 3 updates (#1568)",
+      "author": {
+        "date": "2026-11-25T17:30:40Z"
+      }
+    },
+    "author": {
+      "login": "dependabot[bot]"
+    }
+  },
+  {
+    "sha": "1ca59e6d9db3dd8b8bc15634c07acb023b5e648f",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-25T12:49:25Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "a115632bb33d23b77fdde132f8bee9e2e687d09c",
     "commit": {
       "message": "build(ui): add the react vite plugin to the storybook build (#1567)",
@@ -1073,126 +1193,6 @@
       "message": "chore: sync homebrew cask to v0.160.0 [skip ci]",
       "author": {
         "date": "2026-11-10T21:17:46Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "f00fa3d51e998547d15958c77a052f981be43245",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-11-10T20:43:04Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "98f2ffe5664d3e7243423ee371d2091d576f0e5d",
-    "commit": {
-      "message": "chore(release): 0.160.0 [skip ci]",
-      "author": {
-        "date": "2026-11-10T20:24:18Z"
-      }
-    },
-    "author": {
-      "login": "semantic-release-bot"
-    }
-  },
-  {
-    "sha": "0dc2de6e2bec174f4499c41c303eeb3a323f837b",
-    "commit": {
-      "message": "feat(prompts): tailor cv bullets and cover letters to the evidence the resume shows (#1490)",
-      "author": {
-        "date": "2026-11-10T20:20:06Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "77d29d35ab5f57e91a9e01dfb525b61f7b19f94f",
-    "commit": {
-      "message": "fix(discovery): hold a refreshed posting for review when its url leads to a different advert (#1489)",
-      "author": {
-        "date": "2026-11-10T20:19:32Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "9361073a6049ef2e7618759d4add7cd22e835f71",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-11-10T11:36:01Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "0bb633f3f83e3bd24a0f01d57b0c1d130e1b8de5",
-    "commit": {
-      "message": "chore(prompts): refresh system prompts for current models (#1488)",
-      "author": {
-        "date": "2026-11-10T11:10:09Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "3ffab0c80661c6ad7109585dfd2acaf41dcfcbff",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-10T11:07:42Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "a8a2166c7bd201aa319c3fdf2653c0bc9046286b",
-    "commit": {
-      "message": "chore(agents): preload contracts, enforce fleet guardrails with hooks, adopt new coderabbit features (#1487)",
-      "author": {
-        "date": "2026-11-10T07:11:36Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "9e9b132c45d4e6d062397c5e5efb3dfb35fb775a",
-    "commit": {
-      "message": "fix: batch the open fixable issues and fold in the stalled sync prs (#1486)",
-      "author": {
-        "date": "2026-11-10T07:04:41Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "f03c9ce97af5b2d75b3ec8d08d08ad08551b61e3",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-09T11:27:19Z"
       }
     },
     "author": {
