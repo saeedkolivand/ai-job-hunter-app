@@ -102,7 +102,7 @@ pub fn install<R: Runtime>(window: &WebviewWindow<R>) {
         let mut token = 0;
         // SAFETY: `core` is live; WebView2 AddRefs the handler.
         if let Err(e) = unsafe { core.add_ProcessFailed(&handler, &mut token) } {
-            log::warn!("[webview-recovery] ProcessFailed handler not installed: {e}");
+            log::warn!("[webview-recovery] ProcessFailed handler not installed: {:?}", e.code());
         }
     });
 }
