@@ -7,6 +7,7 @@ pub mod linux_appimage;
 pub mod msix;
 pub mod process;
 pub mod snap;
+pub mod webview_recovery;
 pub mod windows_console;
 
 pub use chrome::{

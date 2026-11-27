@@ -355,6 +355,11 @@ mail-parser = "0.11.5"
 # version / lockfile churn.
 tauri-winrt-notification = "0.8.1"
 wmi = "0.18"
+# `platform::webview_recovery` (#1578): reload the page after a WebView2 render
+# process crash. Already in the tree transitively (tauri-runtime-wry/sentry
+# plugin -> here); pinned to the locked 0.39.1 so no duplicate/lock churn.
+# Bump in lockstep with wry's own pin (a mismatch fails to compile).
+webview2-com = "0.39.1"
 windows-native-keyring-store = "1"
 # DPAPI (CryptUnprotectData) to unwrap the Chromium os_crypt AES key on Windows;
 # UI_ViewManagement reads the system accent color via UISettings (Appearance).
@@ -380,6 +385,10 @@ dbus-secret-service-keyring-store = { version = "1", features = ["crypto-rust", 
 # Bounded subprocess wait for Flatpak probes: spawn + wait_timeout(2s) + kill so a
 # hung `flatpak --version` / `flatpak info` never blocks browser detection.
 wait-timeout = "0.2"
+# `platform::webview_recovery` (#1578): reload after a WebKitGTK web-process
+# crash. Already in the tree transitively (wry); pinned to the locked 2.0.2.
+# Bump in lockstep with wry's own `=2.0.2` pin (a mismatch fails to compile).
+webkit2gtk = "2.0.2"
 
 # Unix Chromium key derivation: PBKDF2-HMAC-SHA1 over the OS-stored "Safe
 # Storage" password → AES-128-CBC decrypt of v10/v11 blobs (best-effort; the
