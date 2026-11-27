@@ -1,50 +1,8 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795561537231,
+  "lastUpdate": 1795778911352,
   "repoUrl": "https://github.com/saeedkolivand/ai-job-hunter-app",
   "entries": {
     "Export render": [
-      {
-        "commit": {
-          "author": {
-            "email": "51081940+saeedkolivand@users.noreply.github.com",
-            "name": "Saeed Kolivand",
-            "username": "saeedkolivand"
-          },
-          "committer": {
-            "email": "noreply@github.com",
-            "name": "GitHub",
-            "username": "web-flow"
-          },
-          "distinct": true,
-          "id": "8a289ef2b70c7e44b234c74ffd86fd5060891416",
-          "message": "fix: make tray pause/resume-all autopilots actually work (#1112)\n\n* fix: make the tray pause-all item an actual pause/resume toggle\n\nClicking \"Pause all autopilots\" paused every autopilot but never flipped\nback to \"Resume all autopilots\" because the menu item handle was a local\nvariable, never stored past build() for a later click to relabel. pause_all\nwas also one-directional, with no resume counterpart.\n\nStore the item's handle in TrayState (mirroring new_jobs_item) and derive\nthe toggle direction from the store's real state: pause every Active\nautopilot if any is running, otherwise resume every Paused one back to\nActive. Archived autopilots are never touched by either direction. The\nlabel is recomputed from the store post-mutation (and at cold-start from\nthe persisted state) rather than tracked separately.\n\nThe mutation + relabel logic is pulled into an AppHandle-free\ntoggle_pause_all(&AutopilotStore) so it's covered by real tests despite\nthis crate having no tauri::test mock-app harness.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n* fix: replace the stale-label tray pause/resume toggle with two static actions\n\nReview of f1de242d found a real regression it introduced: the single stateful\ntoggle's label only got refreshed inside its own click handler, but autopilot\nstatus can also change via autopilot_pause/autopilot_resume (Settings) and\nprivacy_reset_app's autopilot wipe, neither of which touches the tray. A user\npausing both autopilots from Settings left the tray still reading \"Pause all\nautopilots\"; clicking it then derived the opposite action from live store\nstate and resumed everything, against explicit intent.\n\nReplace it with two separate, always-visible, statically-labeled menu items:\n\"Pause all autopilots\" (pauses every currently-Active autopilot, no-op\notherwise) and \"Resume all autopilots\" (resumes every currently-Paused one,\nno-op otherwise). Neither label ever changes, so neither can say the\nopposite of what it does — no relabeling, no cold-start label computation,\nno stored menu-item handle to keep in sync. resume_all is documented as\nliteral: it resumes every Paused autopilot, including ones paused\nindividually from Settings, not just ones a prior pause_all paused.\n\nRewrote the tray test suite for the new shape (9 tests, up from 6): explicit\nno-op coverage for pause_all/resume_all across all-Paused/all-Archived/empty\nstarting states, a single-Active positive case, and a pause-then-resume\nround trip proving a pre-existing individual pause also resumes.\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Sonnet 5 <noreply@anthropic.com>",
-          "timestamp": "2026-09-05T06:26:44+02:00",
-          "tree_id": "9c4ab473f25975edebeb05098c908b97e2c8bc7e",
-          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/8a289ef2b70c7e44b234c74ffd86fd5060891416"
-        },
-        "date": 1788583886602,
-        "tool": "cargo",
-        "benches": [
-          {
-            "name": "pdf/classic",
-            "value": 2332834,
-            "range": "± 65339",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "pdf/atelier_two_column",
-            "value": 2788942,
-            "range": "± 50737",
-            "unit": "ns/iter"
-          },
-          {
-            "name": "docx_classic",
-            "value": 326718,
-            "range": "± 11163",
-            "unit": "ns/iter"
-          }
-        ]
-      },
       {
         "commit": {
           "author": {
@@ -4193,6 +4151,48 @@ window.BENCHMARK_DATA = {
             "name": "docx_classic",
             "value": 491612,
             "range": "± 17473",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "51081940+saeedkolivand@users.noreply.github.com",
+            "name": "Saeed Kolivand",
+            "username": "saeedkolivand"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d04185e1b42f953208901d0543dd0e7127040c7f",
+          "message": "fix(desktop): reload the webview after its page process crashes (#1579)\n\n* fix(desktop): reload the webview after its page process crashes\n\nA WebKitGTK/WebView2 renderer crash left the main window blank until the app\nwas restarted (Sentry DESKTOP-4: crash while hidden to tray on a Linux snap).\nmacOS already reloads via Tauri's default; Linux and Windows now reload the\nmain webview on a renderer crash, with a 30s cooldown so a crash loop can't\nreload forever. Subframe crashes and browser-process exits are left alone.\n\nCloses #1578\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n* fix(desktop): log only the hresult when the crash handler fails to install\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n\n---------\n\nCo-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+          "timestamp": "2026-11-27T12:02:24+01:00",
+          "tree_id": "5a6862293672a06e7b5503adc30a35021340e8d5",
+          "url": "https://github.com/saeedkolivand/ai-job-hunter-app/commit/d04185e1b42f953208901d0543dd0e7127040c7f"
+        },
+        "date": 1795778910393,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "pdf/classic",
+            "value": 2135711,
+            "range": "± 203554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "pdf/atelier_two_column",
+            "value": 2489122,
+            "range": "± 29697",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "docx_classic",
+            "value": 531695,
+            "range": "± 26235",
             "unit": "ns/iter"
           }
         ]
