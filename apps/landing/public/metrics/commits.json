@@ -1,5 +1,77 @@
 [
   {
+    "sha": "0296b11d48489b34953060f55e012f52dedd0cbd",
+    "commit": {
+      "message": "chore: sync landing download version to v0.164.1",
+      "author": {
+        "date": "2026-11-27T11:55:35Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "d64990de5242b573cb4cbd97d6b9ffd5ff5e1447",
+    "commit": {
+      "message": "chore: sync homebrew cask to v0.164.1 [skip ci]",
+      "author": {
+        "date": "2026-11-27T11:55:04Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
+    "sha": "c7e8f4fcf2b998eb92552f2ec67981971cc34394",
+    "commit": {
+      "message": "chore: update export benchmark data [skip ci]",
+      "author": {
+        "date": "2026-11-27T11:28:31Z"
+      }
+    },
+    "author": {
+      "login": "github"
+    }
+  },
+  {
+    "sha": "03c7434d414c0bb73e7fecc3c7eedcb4e5445261",
+    "commit": {
+      "message": "chore(release): 0.164.1 [skip ci]",
+      "author": {
+        "date": "2026-11-27T11:04:11Z"
+      }
+    },
+    "author": {
+      "login": "semantic-release-bot"
+    }
+  },
+  {
+    "sha": "d04185e1b42f953208901d0543dd0e7127040c7f",
+    "commit": {
+      "message": "fix(desktop): reload the webview after its page process crashes (#1579)",
+      "author": {
+        "date": "2026-11-27T11:02:24Z"
+      }
+    },
+    "author": {
+      "login": "saeedkolivand"
+    }
+  },
+  {
+    "sha": "17ae0a72e929aaa0100e49442f7878829e4e5c67",
+    "commit": {
+      "message": "chore: update mission-control snapshot data [skip ci]",
+      "author": {
+        "date": "2026-11-26T12:26:51Z"
+      }
+    },
+    "author": {
+      "login": "github-actions[bot]"
+    }
+  },
+  {
     "sha": "844b43bc7374ce9dffa22d54482a72ea83f0ab2a",
     "commit": {
       "message": "build(ui): drop the redundant storybook vitest setup file (#1577)",
@@ -1125,78 +1197,6 @@
     },
     "author": {
       "login": "github"
-    }
-  },
-  {
-    "sha": "5386eb8a760c5e96e7a51940652485dfa846a494",
-    "commit": {
-      "message": "fix: session defects part 2 of 3: provider failures, fabrication guard, letter language (#1491-#1501) (#1504)",
-      "author": {
-        "date": "2026-11-11T17:03:55Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "377fd64b025bb831c7409aa8ba8455f3c5b82211",
-    "commit": {
-      "message": "chore: update export benchmark data [skip ci]",
-      "author": {
-        "date": "2026-11-11T12:03:00Z"
-      }
-    },
-    "author": {
-      "login": "github"
-    }
-  },
-  {
-    "sha": "1bd7f75701ca799ecf01133762313a1f08e30e6a",
-    "commit": {
-      "message": "fix: session defects part 1 of 3: scraping, autopilot, agent catalogue, pipeline validation (#1491-#1501) (#1503)",
-      "author": {
-        "date": "2026-11-11T11:44:19Z"
-      }
-    },
-    "author": {
-      "login": "saeedkolivand"
-    }
-  },
-  {
-    "sha": "5782b6eee3ac25af0ab92f194e10eae226782c13",
-    "commit": {
-      "message": "chore: update mission-control snapshot data [skip ci]",
-      "author": {
-        "date": "2026-11-11T10:53:43Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "dc281a114a29d94778e0d4035acb4dcd2c415fda",
-    "commit": {
-      "message": "chore: sync landing download version to v0.160.0",
-      "author": {
-        "date": "2026-11-10T21:18:06Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
-    }
-  },
-  {
-    "sha": "48e0183e4aac84a0b2894405ce8f96a26bb45ff7",
-    "commit": {
-      "message": "chore: sync homebrew cask to v0.160.0 [skip ci]",
-      "author": {
-        "date": "2026-11-10T21:17:46Z"
-      }
-    },
-    "author": {
-      "login": "github-actions[bot]"
     }
   }
 ]
