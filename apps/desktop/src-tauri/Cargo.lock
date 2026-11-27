@@ -317,6 +317,8 @@ dependencies = [
  "urlencoding",
  "uuid",
  "wait-timeout",
+ "webkit2gtk",
+ "webview2-com",
  "whatlang",
  "windows",
  "windows-native-keyring-store",

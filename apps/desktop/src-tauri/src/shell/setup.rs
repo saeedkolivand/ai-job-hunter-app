@@ -113,6 +113,10 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Erro
                 }
             }
 
+            if let Some(window) = app.get_webview_window("main") {
+                crate::platform::webview_recovery::install(&window);
+            }
+
             // Build system tray.
             if let Err(e) = tray::build(handle) {
                 log::warn!(
