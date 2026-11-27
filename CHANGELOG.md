@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.164.1](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.164.0...v0.164.1) (2026-11-27)
+
+### 🐛 Bug Fixes
+
+* **desktop:** reload the webview after its page process crashes ([#1579](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1579)) ([d04185e](https://github.com/saeedkolivand/ai-job-hunter-app/commit/d04185e1b42f953208901d0543dd0e7127040c7f)), closes [#1578](https://github.com/saeedkolivand/ai-job-hunter-app/issues/1578)
+
 ## [0.164.0](https://github.com/saeedkolivand/ai-job-hunter-app/compare/v0.163.0...v0.164.0) (2026-11-24)
 
 ### ✨ Features
